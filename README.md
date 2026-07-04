@@ -1,20 +1,80 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# AI Smart Tourism & Heritage Intelligence Platform
 
-# Run and deploy your AI Studio app
+An immersive, full-stack, AI-powered platform designed to bridge the gap between ancient living monuments and modern sustainable tourism. Combining the multimodal understanding of Gemini 3.5 with real-time analytics, weather-aware planning, conversational guide assistants (RAG), and gamified exploration.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/7a42e8dd-bb48-4668-ae9e-1d9275173249
+## 🧭 Key Features & Modules
 
-## Run Locally
+### 1. Smart Travel Planner
+* **Personalized Itineraries:** Instantly creates day-by-day travel plans customized to budgets, durations, and specific heritage interests.
+* **Context-Optimized Schedules:** Adjusts and optimizes itineraries dynamically depending on sweltering or rainy weather patterns, preferred travel modes (auto-rickshaws, metro, private cars), and crowd preferences.
+* **Crowd-Density Signals:** Hourly warnings warn travelers about expected crowd patterns, recommending morning exclusive hours or standard flows to minimize long queue lines.
 
-**Prerequisites:**  Node.js
+### 2. Multimodal Heritage Explorer
+* **Gemini Vision Recognition:** Point your camera or upload a photo of architectural carvings, stone inscriptions, or temple structures. Gemini instantly decodes the heritage landmark.
+* **Interactive Storytelling Guides:** Read detailed historical narrations, architectural design reviews, local folk tales, and construction timelines translated instantly into 10+ global languages.
+* **Pre-built Living Heritage Library:** Quick links to famous sites like *Madurai Meenakshi Temple*, *Taj Mahal*, *Hampi Ruins*, and *Great Living Chola Temples*.
 
+### 3. Voice Tour Guide (TTS)
+* **Prebuilt Auditory Narration:** Generates clear, high-quality audio narration for historical contexts or architectural summaries on-demand.
+* **Voice Customization:** Cycle between distinct prebuilt guide personalities (e.g., *Kore*, *Zephyr*, *Puck*, *Charon*, *Fenrir*) to suit your storytelling vibe.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 4. Local Business & Community Support
+* **Eco-tourism and Local Sourcing:** Recommends surrounding handcrafted workshops, local artisan boutiques, traditional restaurants (with must-try local dishes), and live cultural events to support community well-being and local livelihoods.
+
+### 5. AR Scavenger Hunt & Gamification
+* **Simulated Physical QR Scans:** Earn experience points (XP) and collect mythical badges (e.g., *Gopuram Master*, *Vimana Seeker*) by simulating physical QR plaque scans.
+* **Heritage Certificate:** Accumulate all four master badges to unlock a personalized digital *Certificate of Heritage Intelligence* approved by the simulated Global Heritage Foundation.
+
+### 6. Decision Intelligence Dashboard (Global Architecture)
+* **Any Landmark Worldwide:** Dynamic search bar allows tourism departments and city officials to query visitor traffic, crowd density, and structural feedback for *any* architectural monument globally (e.g., *Colosseum*, *Machu Picchu*, *Ajanta Caves*).
+* **AI Conservation Advisories:** Auto-generates detailed structural health summaries, environmental wear analysis, and budget distribution recommendations for preservation.
+
+---
+
+## 🛠 Tech Stack & Architecture
+
+```
+                Tourist
+                   │
+         Mobile/Web React App
+                   │
+      ┌────────────┼─────────────┐
+      │            │             │
+ Planner AI   Heritage AI   Navigation AI
+      │            │             │
+      └───────Gemini 3.5─────────┘
+              │
+      RAG Knowledge Base & Vision APIs
+              │
+    Decision Analytics Dashboard
+```
+
+* **Frontend:** React 19, TypeScript, Tailwind CSS, Motion (Animations), Recharts (Analytical Graphs), Lucide Icons
+* **Backend:** Express, Node.js (bundled with Esbuild CJS configuration)
+* **AI Engine:** `@google/genai` TypeScript SDK utilizing modern `gemini-3.5-flash` for multimodal reasoning, JSON schemas, dynamic translation, and `gemini-3.1-flash-tts-preview` for high-quality speech.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+* Node.js v18 or later
+* A valid `GEMINI_API_KEY` (configured in your environment variables or workspace secrets)
+
+### Installation & Run
+1. Install base project dependencies:
+   ```bash
+   npm install
+   ```
+2. Start the local development server:
+   ```bash
+   npm run dev
+   ```
+3. Open your browser to `http://localhost:3000` to preview the interactive platform.
+
+---
+
+## 🛡 License
+This project is licensed under the Apache-2.0 License. See files for details.
