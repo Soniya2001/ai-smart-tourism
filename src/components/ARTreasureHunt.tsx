@@ -1,1040 +1,1063 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
-  Award, QrCode, Sparkles, Compass, MapPin, CheckCircle, 
-  HelpCircle, Trophy, Gift, ArrowRight, Camera, RefreshCw,
-  Clock, Search, Upload, Play, Pause, Volume2, VolumeX,
-  BookOpen, Film, Smile, UserCheck, Hammer, Feather, Crown,
-  Sliders, Layers, Eye, Sparkle, Info, ChevronRight
+  Sparkles, Clock, Search, BookOpen, Award, Trophy, 
+  CheckCircle2, XCircle, ArrowRight, RotateCcw, Lock, 
+  MapPin, Landmark, HelpCircle, ChevronRight, ShieldCheck, Star, ArrowLeft,
+  Puzzle, RefreshCw, Eye, Check, Zap, Layers, Play, CheckCircle
 } from "lucide-react";
-import { 
-  FEATURED_TIME_MONUMENTS, 
-  getMonumentTimeData, 
-  MonumentTimeData, 
-  TimelineEra 
-} from "../lib/timeMachineData";
 
-interface Badge {
-  id: string;
-  name: string;
-  landmark: string;
-  rarity: "Common" | "Rare" | "Epic";
-  unlocked: boolean;
-  color: string;
-  icon: string;
-  myth: string;
+import HeritageWallet from "./HeritageWallet";
+
+interface QuizQuestion {
+  id: number;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation?: string;
 }
 
+interface TimeTravelData {
+  monumentName: string;
+  historicalYear: string;
+  location?: string;
+  imageUrl: string;
+  presentImageUrl?: string;
+  historicalImageUrl?: string;
+  overviewDescription: string;
+  historicalFacts: string[];
+  quizQuestions: QuizQuestion[];
+}
+
+type DifficultyLevel = "easy" | "medium" | "hard";
+
 export default function ARTreasureHunt() {
-  const [activeTab, setActiveTab] = useState<"timemachine" | "badges" | "certificate">("timemachine");
-  const [score, setScore] = useState<number>(100);
+  const [activeTab, setActiveTab] = useState<"puzzle" | "quiz" | "wallet">("puzzle");
+  const [searchInput, setSearchInput] = useState<string>("Madurai Meenakshi Temple");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // -------------------------------------------------------------
-  // AI TIME MACHINE STATE
-  // -------------------------------------------------------------
-  const [searchQuery, setSearchQuery] = useState<string>("Madurai Meenakshi Temple");
-  const [monumentData, setMonumentData] = useState<MonumentTimeData>(FEATURED_TIME_MONUMENTS.meenakshi);
-  const [selectedYear, setSelectedYear] = useState<number>(1650);
-  const [storyMode, setStoryMode] = useState<"historian" | "documentary" | "child" | "traveler" | "architect" | "storyteller">("storyteller");
-  const [isPlayingAuto, setIsPlayingAuto] = useState<boolean>(false);
-  const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [customImage, setCustomImage] = useState<string | null>(null);
-  const [splitPosition, setSplitPosition] = useState<number>(50);
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  // Monument Historical Data State
+  const [monumentData, setMonumentData] = useState<TimeTravelData | null>(null);
 
-  // Preset search options
-  const searchPresets = [
-    { name: "Meenakshi Temple", query: "Madurai Meenakshi Temple" },
-    { name: "Taj Mahal", query: "Taj Mahal" },
-    { name: "Hampi Ruins", query: "Hampi Virupaksha Temple" },
-    { name: "Konark Sun Temple", query: "Konark Sun Temple" },
-    { name: "Machu Picchu", query: "Machu Picchu" },
-    { name: "Colosseum", query: "Roman Colosseum" },
-    { name: "Great Wall of China", query: "Great Wall of China" }
+  // Puzzle State
+  const [difficulty, setDifficulty] = useState<DifficultyLevel>("easy");
+  const [gridSize, setGridSize] = useState<number>(3); // 3x3 Easy, 4x4 Medium, 5x5 Hard
+  const [puzzlePieces, setPuzzlePieces] = useState<number[]>([]);
+  const [selectedTileIndex, setSelectedTileIndex] = useState<number | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [moves, setMoves] = useState<number>(0);
+  const [timerSeconds, setTimerSeconds] = useState<number>(0);
+  const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
+  const [isPuzzleSolved, setIsPuzzleSolved] = useState<boolean>(false);
+  const [showCelebration, setShowCelebration] = useState<boolean>(false);
+
+  // Quiz State
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
+  const [isQuizSubmitted, setIsQuizSubmitted] = useState<boolean>(false);
+  const [badgeUnlocked, setBadgeUnlocked] = useState<boolean>(false);
+
+  // Preset Examples
+  const exampleMonuments = [
+    "Madurai Meenakshi Temple",
+    "Taj Mahal",
+    "Hampi Virupaksha Temple",
+    "Brihadeeswara Temple"
   ];
 
-  // Storytelling perspectives configuration
-  const storytellingModes = [
-    {
-      id: "historian",
-      title: "Historian",
-      icon: <BookOpen className="h-4 w-4 text-amber-600" />,
-      tagline: "Historically accurate narration",
-      bgClass: "border-amber-200 bg-amber-50/70 text-amber-950"
-    },
-    {
-      id: "documentary",
-      title: "Documentary",
-      icon: <Film className="h-4 w-4 text-blue-600" />,
-      tagline: "Netflix history documentary style",
-      bgClass: "border-blue-200 bg-blue-50/70 text-blue-950"
-    },
-    {
-      id: "child",
-      title: "Child Mode",
-      icon: <Smile className="h-4 w-4 text-emerald-600" />,
-      tagline: "Simple & engaging for kids",
-      bgClass: "border-emerald-200 bg-emerald-50/70 text-emerald-950"
-    },
-    {
-      id: "traveler",
-      title: "Traveler",
-      icon: <UserCheck className="h-4 w-4 text-purple-600" />,
-      tagline: "What visitors experienced",
-      bgClass: "border-purple-200 bg-purple-50/70 text-purple-950"
-    },
-    {
-      id: "architect",
-      title: "Architect",
-      icon: <Hammer className="h-4 w-4 text-stone-600" />,
-      tagline: "Engineering & construction focus",
-      bgClass: "border-stone-200 bg-stone-50/70 text-stone-950"
-    },
-    {
-      id: "storyteller",
-      title: "Storyteller",
-      icon: <Feather className="h-4 w-4 text-rose-600" />,
-      tagline: "Grounded immersive narrative",
-      bgClass: "border-rose-200 bg-rose-50/70 text-rose-950"
-    }
-  ];
-
-  // Badges state for wallet
-  const [badges, setBadges] = useState<Badge[]>([
-    {
-      id: "gopuram",
-      name: "Gopuram Master",
-      landmark: "Madurai Meenakshi Temple",
-      rarity: "Epic",
-      unlocked: true,
-      color: "from-amber-600 to-yellow-800",
-      icon: "🛕",
-      myth: "Legend says the Thousand Pillar Hall was built in a single night from divine stone carvings."
-    },
-    {
-      id: "marble",
-      name: "Marble Sentinel",
-      landmark: "Taj Mahal",
-      rarity: "Rare",
-      unlocked: true,
-      color: "from-rose-500 to-pink-700",
-      icon: "🕌",
-      myth: "The white marble changes its hue from pale pink in the morning to golden yellow under moonlight."
-    },
-    {
-      id: "charioteer",
-      name: "Stone Charioteer",
-      landmark: "Hampi Ruins",
-      rarity: "Epic",
-      unlocked: false,
-      color: "from-amber-700 to-orange-800",
-      icon: "🛒",
-      myth: "The stone wheels of the famous Hampi chariot used to spin freely before they were protected."
-    },
-    {
-      id: "vimana",
-      name: "Vimana Seeker",
-      landmark: "Great Living Chola Temples",
-      rarity: "Rare",
-      unlocked: false,
-      color: "from-emerald-600 to-teal-800",
-      icon: "👑",
-      myth: "The solid 80-tonne granite capstone (Vimana) never casts a shadow at noon throughout the year."
-    }
-  ]);
-
-  // Handle Search Query submit
-  const handleSearchSubmit = async (e?: React.FormEvent, directQuery?: string) => {
-    if (e) e.preventDefault();
-    const q = directQuery || searchQuery;
-    if (!q.trim()) return;
-
-    setIsSearching(true);
-    try {
-      // 1. Try local featured database first
-      const matched = getMonumentTimeData(q);
-      setMonumentData(matched);
-      setCustomImage(null);
-
-      // Set initial selected year to nearest historical era
-      const eraYears = matched.timelineEras.map(e => e.year);
-      if (eraYears.length > 0) {
-        setSelectedYear(eraYears[Math.floor(eraYears.length / 2)] || matched.constructionYear);
+  // Helper to generate a solvable shuffled board
+  const createShuffledBoard = (size: number) => {
+    const total = size * size;
+    const arr = Array.from({ length: total }, (_, i) => i);
+    
+    // Pairwise swaps to ensure random shuffling
+    for (let i = 0; i < total * 15; i++) {
+      const a = Math.floor(Math.random() * total);
+      const b = Math.floor(Math.random() * total);
+      if (a !== b) {
+        const temp = arr[a];
+        arr[a] = arr[b];
+        arr[b] = temp;
       }
-
-      // 2. Call Gemini API endpoint in background to enrich if needed
-      fetch("/api/timemachine/reconstruct", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, year: selectedYear })
-      }).then(res => res.json()).then(data => {
-        if (data && !data.fallback && data.snapshot) {
-          // Enrich snapshot if Gemini returned richer details
-          setMonumentData(prev => ({
-            ...prev,
-            snapshot: {
-              ...prev.snapshot,
-              builder: data.snapshot.builder || prev.snapshot.builder,
-              dynasty: data.snapshot.dynasty || prev.snapshot.dynasty,
-              architecturalStyle: data.snapshot.architecturalStyle || prev.snapshot.architecturalStyle
-            }
-          }));
-        }
-      }).catch(err => console.log("Gemini Time Machine fetch note:", err));
-
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSearching(false);
     }
+    
+    // Ensure board is not already solved
+    if (arr.every((val, idx) => val === idx)) {
+      const temp = arr[0];
+      arr[0] = arr[1];
+      arr[1] = temp;
+    }
+    return arr;
   };
 
-  // Handle image upload with Gemini Vision identification
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64Data = reader.result as string;
-      setCustomImage(base64Data);
-      setIsSearching(true);
-
-      // Call Gemini Vision endpoint
-      fetch("/api/timemachine/reconstruct", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64Data, query: "Uploaded Heritage Image", year: selectedYear })
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.monumentName) {
-            const detected = getMonumentTimeData(data.monumentName);
-            setSearchQuery(data.monumentName);
-            setMonumentData(detected);
-          }
-        })
-        .catch(err => console.error(err))
-        .finally(() => setIsSearching(false));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Auto-play timeline animation timer
+  // Timer Effect
   useEffect(() => {
     let interval: any = null;
-    if (isPlayingAuto) {
+    if (isTimerRunning && !isPuzzleSolved) {
       interval = setInterval(() => {
-        setSelectedYear(prev => {
-          const minYear = monumentData.constructionYear || 1200;
-          if (prev <= minYear) {
-            setIsPlayingAuto(false);
-            return 2026;
-          }
-          return Math.max(minYear, prev - 50);
-        });
-      }, 1800);
+        setTimerSeconds(s => s + 1);
+      }, 1000);
     } else {
       clearInterval(interval);
     }
     return () => clearInterval(interval);
-  }, [isPlayingAuto, monumentData]);
+  }, [isTimerRunning, isPuzzleSolved]);
 
-  // Find nearest era for currently selected year
-  const getNearestEra = (): TimelineEra => {
-    if (!monumentData.timelineEras || monumentData.timelineEras.length === 0) {
-      return {
-        year: selectedYear,
-        yearLabel: `${selectedYear} CE`,
-        eraName: "Historical Reconstruction Era",
-        todayImage: monumentData.currentImage,
-        reconstructionImage: monumentData.currentImage,
-        keyTransformations: ["Historical stone masonry", "Active community celebrations"],
-        narrations: {
-          historian: `${monumentData.name} in ${selectedYear} CE.`,
-          documentary: `Visualizing ${monumentData.name} through the centuries.`,
-          child: `Imagine visiting this place long ago!`,
-          traveler: `Travelers step into the historical courtyard.`,
-          architect: `Traditional architectural engineering.`,
-          storyteller: `History unfolds across the centuries.`
-        }
-      };
+  // Initial Load: Generate Default Monument Data
+  useEffect(() => {
+    handleGeneratePuzzle("Madurai Meenakshi Temple");
+  }, []);
+
+  // Fetch Monument Data & Reset Puzzle
+  const handleGeneratePuzzle = async (targetQuery?: string) => {
+    const query = (targetQuery || searchInput).trim();
+    if (!query) return;
+
+    setIsLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const response = await fetch("/api/time-travel/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: query })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to load monument data. Please try again.");
+      }
+
+      const data: TimeTravelData = await response.json();
+      setMonumentData(data);
+      
+      // Initialize Puzzle Board
+      resetPuzzleBoard(gridSize, data);
+
+      // Reset Quiz
+      setCurrentQuestionIndex(0);
+      setUserAnswers({});
+      setIsQuizSubmitted(false);
+      setBadgeUnlocked(false);
+    } catch (err: any) {
+      console.error("Puzzle generation error:", err);
+      setErrorMsg("Could not load monument puzzle. Please check your network and try again.");
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    let closest = monumentData.timelineEras[0];
-    let minDiff = Math.abs(selectedYear - closest.year);
+  // Reset Puzzle Board with specific size
+  const resetPuzzleBoard = (size: number, data?: TimeTravelData) => {
+    const shuffled = createShuffledBoard(size);
+    setGridSize(size);
+    setPuzzlePieces(shuffled);
+    setSelectedTileIndex(null);
+    setDraggedIndex(null);
+    setMoves(0);
+    setTimerSeconds(0);
+    setIsTimerRunning(true);
+    setIsPuzzleSolved(false);
+    setShowCelebration(false);
+  };
 
-    for (const era of monumentData.timelineEras) {
-      const diff = Math.abs(selectedYear - era.year);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = era;
+  // Handle Difficulty Change
+  const handleDifficultyChange = (newDiff: DifficultyLevel) => {
+    let size = 3;
+    if (newDiff === "medium") size = 4;
+    if (newDiff === "hard") size = 5;
+
+    setDifficulty(newDiff);
+    if (monumentData) {
+      resetPuzzleBoard(size, monumentData);
+    }
+  };
+
+  // Swap Two Pieces
+  const swapPieces = (idxA: number, idxB: number) => {
+    if (isPuzzleSolved) return;
+
+    setPuzzlePieces(prev => {
+      const next = [...prev];
+      const temp = next[idxA];
+      next[idxA] = next[idxB];
+      next[idxB] = temp;
+
+      // Check if solved
+      const solved = next.every((val, i) => val === i);
+      if (solved) {
+        setIsPuzzleSolved(true);
+        setIsTimerRunning(false);
+        setShowCelebration(true);
+      }
+      return next;
+    });
+
+    setMoves(m => m + 1);
+  };
+
+  // Click Tile Handler
+  const handleTileClick = (index: number) => {
+    if (isPuzzleSolved) return;
+
+    if (selectedTileIndex === null) {
+      setSelectedTileIndex(index);
+    } else if (selectedTileIndex === index) {
+      setSelectedTileIndex(null);
+    } else {
+      swapPieces(selectedTileIndex, index);
+      setSelectedTileIndex(null);
+    }
+  };
+
+  // Drag and Drop Handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.setData("text/plain", index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+    swapPieces(draggedIndex, targetIndex);
+    setDraggedIndex(null);
+  };
+
+  // Auto-Solve Shortcut (for user convenience / test)
+  const handleAutoSolve = () => {
+    if (!monumentData || isPuzzleSolved) return;
+    const total = gridSize * gridSize;
+    const solved = Array.from({ length: total }, (_, i) => i);
+    setPuzzlePieces(solved);
+    setIsPuzzleSolved(true);
+    setIsTimerRunning(false);
+    setShowCelebration(true);
+  };
+
+  // Format Timer MM:SS
+  const formatTimer = (totalSecs: number) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Calculate Progress
+  const correctCount = puzzlePieces.filter((pieceVal, idx) => pieceVal === idx).length;
+  const totalTiles = gridSize * gridSize;
+  const progressPercentage = Math.round((correctCount / totalTiles) * 100);
+
+  // Image Fallback SVG
+  const getFallbackSvg = (title: string) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+      <rect width="800" height="600" fill="%231e1b4b"/>
+      <path d="M200 450 L200 250 L300 180 L400 250 L400 450 Z M450 450 L450 180 L550 120 L650 180 L650 450 Z" fill="none" stroke="%23fbbf24" stroke-width="8" opacity="0.7"/>
+      <text x="400" y="300" font-family="sans-serif" font-size="32" font-weight="bold" fill="%23ffffff" text-anchor="middle">${encodeURIComponent(title)}</text>
+      <text x="400" y="350" font-family="sans-serif" font-size="18" fill="%23a5f3fc" text-anchor="middle">HERITAGE MONUMENT PUZZLE</text>
+    </svg>`;
+    return `data:image/svg+xml;utf8,${svg}`;
+  };
+
+  // Quiz Handlers
+  const handleSelectOption = (optionIndex: number) => {
+    if (isQuizSubmitted) return;
+    setUserAnswers(prev => ({
+      ...prev,
+      [currentQuestionIndex]: optionIndex
+    }));
+  };
+
+  const handleSubmitQuiz = () => {
+    setIsQuizSubmitted(true);
+    
+    // Check score
+    if (monumentData?.quizQuestions) {
+      let count = 0;
+      monumentData.quizQuestions.forEach((q, idx) => {
+        if (userAnswers[idx] === q.correctIndex) {
+          count += 1;
+        }
+      });
+
+      // Passing score: 80% or above (4 or 5 correct out of 5)
+      if (count >= 4) {
+        setBadgeUnlocked(true);
+        unlockBadgeInStorage(monumentData.monumentName);
+      } else {
+        setBadgeUnlocked(false);
       }
     }
-    return closest;
   };
 
-  const currentEra = getNearestEra();
-  const currentNarration = currentEra.narrations[storyMode] || currentEra.narrations.storyteller;
+  const unlockBadgeInStorage = (monumentName: string) => {
+    try {
+      const stored = localStorage.getItem("heritage_wallet_badges");
+      let badges = stored ? JSON.parse(stored) : [];
+      
+      // Unlock Knowledge Badge "History Scholar"
+      let found = false;
+      badges = badges.map((b: any) => {
+        if (b.id === "k2" || b.id === "k1") {
+          found = true;
+          return {
+            ...b,
+            unlocked: true,
+            earnedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            remainingText: "Completed!"
+          };
+        }
+        return b;
+      });
 
-  // TTS audio playback handler
-  const handleToggleSpeech = () => {
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      return;
-    }
+      if (!found) {
+        badges.push({
+          id: `m_${Date.now()}`,
+          name: `${monumentName} Scholar`,
+          category: "Knowledge",
+          tier: "Rare",
+          iconName: "BookOpen",
+          description: `Mastered the heritage puzzle and scored 80%+ on ${monumentName}.`,
+          unlocked: true,
+          earnedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+          currentProgress: 1,
+          totalRequired: 1,
+          remainingText: "Completed!",
+          xp: 500
+        });
+      }
 
-    if ("speechSynthesis" in window) {
-      const utterance = new SpeechSynthesisUtterance(currentNarration);
-      utterance.rate = 0.95;
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-      setIsSpeaking(true);
-      window.speechSynthesis.speak(utterance);
+      localStorage.setItem("heritage_wallet_badges", JSON.stringify(badges));
+    } catch (e) {
+      console.error("Failed to unlock badge in storage:", e);
     }
   };
 
-  const unlockedCount = badges.filter(b => b.unlocked).length;
-  const isEligibleForCertificate = unlockedCount === badges.length;
+  // Quiz Score Stats
+  const calculateScore = () => {
+    if (!monumentData?.quizQuestions) return { correctCount: 0, percentage: 0 };
+    let count = 0;
+    monumentData.quizQuestions.forEach((q, idx) => {
+      if (userAnswers[idx] === q.correctIndex) {
+        count += 1;
+      }
+    });
+    const percentage = Math.round((count / monumentData.quizQuestions.length) * 100);
+    return { correctCount: count, percentage };
+  };
+
+  const getRankTitle = (correctCount: number) => {
+    if (correctCount >= 5) return { title: "History Master", color: "text-amber-800 bg-amber-100 border-amber-300" };
+    if (correctCount >= 3) return { title: "Good Explorer", color: "text-emerald-800 bg-emerald-100 border-emerald-300" };
+    return { title: "Needs Improvement", color: "text-amber-800 bg-amber-100 border-amber-300" };
+  };
+
+  const monumentImage = monumentData?.presentImageUrl || monumentData?.imageUrl || getFallbackSvg(monumentData?.monumentName || "Monument");
+
+  // Overview Paragraphs Split
+  const overviewParagraphs = monumentData?.overviewDescription
+    ? monumentData.overviewDescription.split(/\n\n+/).filter(p => p.trim().length > 0)
+    : [];
 
   return (
-    <div id="ai-time-machine-container" className="space-y-8 font-sans">
-      
-      {/* Module Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-amber-200/60 pb-5">
+    <div className="space-y-6">
+      {/* Module Navigation Sub-Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-5">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 bg-amber-100 text-amber-900 rounded-xl text-xl shadow-xs">🕰</span>
-            <h2 className="text-2xl font-serif font-bold text-stone-900 tracking-tight">
-              AI TIME MACHINE
-            </h2>
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-900 text-amber-200 px-2.5 py-0.5 rounded-full border border-amber-700">
-              Flagship Experience
-            </span>
-          </div>
-          <p className="text-amber-950/80 font-medium text-xs md:text-sm mt-1">
-            Travel through centuries. Experience history through AI.
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+            <Puzzle className="h-6 w-6 text-indigo-600" />
+            Heritage Quest & Puzzle
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Rebuild history through interactive monument puzzles, uncover rich facts, and test your knowledge.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-r from-amber-100 to-amber-50 border border-amber-200 px-4 py-2 rounded-2xl text-center shadow-xs">
-            <span className="block text-[10px] text-amber-900 font-semibold uppercase tracking-wider">Heritage Explorer XP</span>
-            <span className="font-bold text-amber-950 text-sm">{score} XP</span>
-          </div>
+        {/* 3 Sub-Tabs */}
+        <div className="flex items-center gap-2 bg-gray-100/80 p-1 rounded-2xl border border-gray-200 self-start md:self-auto flex-wrap">
+          <button
+            onClick={() => setActiveTab("puzzle")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === "puzzle"
+                ? "bg-white text-indigo-900 shadow-sm border border-gray-200/80"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <Puzzle className="h-4 w-4 text-indigo-600" />
+            <span>Heritage Puzzle</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("quiz")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === "quiz"
+                ? "bg-white text-indigo-900 shadow-sm border border-gray-200/80"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <BookOpen className="h-4 w-4 text-emerald-600" />
+            <span>Learn & Quiz</span>
+            {monumentData && (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("wallet")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === "wallet"
+                ? "bg-amber-500 text-stone-950 shadow-sm border border-amber-400 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <Trophy className="h-4 w-4 text-amber-600" />
+            <span>Heritage Wallet</span>
+          </button>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex gap-2 border-b border-amber-200/80 pb-2 overflow-x-auto scrollbar-none">
-        {[
-          { id: "timemachine", label: "🕰 AI Time Machine", count: "4D Historical Reconstruction" },
-          { id: "badges", label: "🎖 My Heritage Wallet", count: `${unlockedCount}/${badges.length}` },
-          { id: "certificate", label: "📜 Official Curator Certificate", count: isEligibleForCertificate ? "Ready" : "Locked" }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2.5 text-xs font-semibold rounded-2xl shrink-0 transition-all cursor-pointer ${
-              activeTab === tab.id
-                ? "bg-gradient-to-r from-amber-800 via-amber-900 to-yellow-950 text-white shadow-md font-bold ring-2 ring-amber-500/30"
-                : "bg-amber-50/70 hover:bg-amber-100/80 text-stone-700 border border-amber-200/60"
-            }`}
-          >
-            {tab.label} <span className="ml-1 opacity-80 text-[10px]">({tab.count})</span>
-          </button>
-        ))}
-      </div>
-
-      <AnimatePresence mode="wait">
-        
-        {/* ========================================================= */}
-        {/* TAB 1: 🕰 AI TIME MACHINE */}
-        {/* ========================================================= */}
-        {activeTab === "timemachine" && (
-          <motion.div
-            key="timemachine"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="space-y-8"
-          >
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              
-              {/* --------------------------------------------------- */}
-              {/* LEFT PANEL: SEARCH, UPLOAD & DETECTION CONTROLS */}
-              {/* --------------------------------------------------- */}
-              <div className="lg:col-span-4 space-y-6">
-                
-                {/* Panel Header */}
-                <div className="bg-gradient-to-br from-amber-900 via-yellow-950 to-stone-900 text-white rounded-3xl p-6 border border-amber-700/60 shadow-lg space-y-4 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-6 opacity-10 text-8xl font-serif select-none pointer-events-none">
-                    🏛
-                  </div>
-                  <div className="flex items-center gap-2 text-amber-300 font-mono text-xs font-semibold uppercase tracking-wider">
-                    <Sparkles className="h-4 w-4 text-amber-400 animate-pulse" />
-                    Interactive Portal
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-serif font-bold text-white tracking-tight flex items-center gap-2">
-                      🕰 AI TIME MACHINE
-                    </h3>
-                    <p className="text-amber-200/90 text-xs font-medium mt-1">
-                      Travel through history using Google Gemini.
-                    </p>
-                  </div>
-                  <p className="text-stone-300 text-xs leading-relaxed border-t border-amber-800/80 pt-3">
-                    Explore how monuments transformed across centuries using AI-powered historical reconstruction.
-                  </p>
-                </div>
-
-                {/* Search Heritage Site Box */}
-                <div className="bg-white rounded-3xl border border-amber-200/80 p-5 shadow-sm space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
-                      <Search className="h-3.5 w-3.5 text-amber-700" />
-                      Search Heritage Site
-                    </label>
-                    <p className="text-[11px] text-stone-500">
-                      Search any monument worldwide
-                    </p>
-                  </div>
-
-                  <form onSubmit={(e) => handleSearchSubmit(e)} className="flex gap-2">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="e.g. Meenakshi Temple, Taj Mahal, Colosseum..."
-                      className="flex-1 bg-amber-50/50 border border-amber-200 px-3.5 py-2 rounded-xl text-xs focus:outline-none focus:border-amber-600 text-stone-900 placeholder:text-stone-400 font-medium"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isSearching}
-                      className="bg-amber-900 hover:bg-black text-white px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1 shadow-sm disabled:opacity-50 cursor-pointer"
-                    >
-                      {isSearching ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-                    </button>
-                  </form>
-
-                  {/* Preset Suggestions Chips */}
-                  <div className="space-y-2 pt-1 border-t border-amber-100">
-                    <span className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider block">Popular Heritage Sites</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {searchPresets.map((preset, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => {
-                            setSearchQuery(preset.query);
-                            handleSearchSubmit(undefined, preset.query);
-                          }}
-                          className={`text-[11px] px-2.5 py-1 rounded-full border transition-all font-medium cursor-pointer ${
-                            monumentData.name.toLowerCase().includes(preset.name.toLowerCase())
-                              ? "bg-amber-900 text-white border-amber-900 shadow-2xs font-semibold"
-                              : "bg-amber-50/60 hover:bg-amber-100 text-amber-950 border-amber-200"
-                          }`}
-                        >
-                          {preset.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Upload Monument Image */}
-                <div className="bg-white rounded-3xl border border-amber-200/80 p-5 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
-                      <Upload className="h-3.5 w-3.5 text-amber-700" />
-                      Upload Monument Image
-                    </label>
-                    <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold">
-                      Gemini Vision
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-stone-500">
-                    Upload any photograph to identify architectural style, construction era, and historical context.
-                  </p>
-
-                  <label className="border-2 border-dashed border-amber-300/80 hover:border-amber-600 bg-amber-50/40 hover:bg-amber-50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all text-center">
-                    <Camera className="h-6 w-6 text-amber-700" />
-                    <span className="text-xs font-semibold text-amber-950">Click or drag image to scan</span>
-                    <span className="text-[10px] text-stone-400">Supports JPG, PNG, WEBP</span>
-                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-                  </label>
-
-                  {customImage && (
-                    <div className="relative rounded-2xl overflow-hidden border border-amber-200 mt-2">
-                      <img src={customImage} alt="Uploaded Monument" className="w-full h-32 object-cover" />
-                      <span className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-xs text-white text-[10px] px-2 py-0.5 rounded-md font-medium">
-                        ✓ Scanned with Gemini Vision
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Detected Monument Information Card */}
-                <div className="bg-gradient-to-br from-stone-900 to-amber-950 text-white rounded-3xl p-5 border border-amber-800/80 shadow-md space-y-4">
-                  <div className="flex items-center justify-between border-b border-amber-800/60 pb-3">
-                    <span className="text-[10px] uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1">
-                      <Crown className="h-3 w-3" /> Active Monument Context
-                    </span>
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-md font-mono">
-                      Detected
-                    </span>
-                  </div>
-
-                  <div>
-                    <h4 className="font-bold text-lg text-white font-serif">{monumentData.name}</h4>
-                    <p className="text-xs text-amber-200/90 flex items-center gap-1 mt-0.5 font-medium">
-                      <MapPin className="h-3 w-3 text-amber-400 shrink-0" /> {monumentData.location}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                    <div className="bg-amber-950/80 p-2.5 rounded-xl border border-amber-800/50">
-                      <span className="block text-[10px] text-amber-400 font-semibold uppercase">Construction</span>
-                      <span className="font-bold text-amber-100">{monumentData.constructionYearLabel}</span>
-                    </div>
-                    <div className="bg-amber-950/80 p-2.5 rounded-xl border border-amber-800/50">
-                      <span className="block text-[10px] text-amber-400 font-semibold uppercase">Current Year</span>
-                      <span className="font-bold text-amber-100">{monumentData.currentYearLabel}</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-amber-900/40 border border-amber-700/50 p-3 rounded-2xl text-xs space-y-1">
-                    <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider block">Historical Timeline Span</span>
-                    <p className="text-stone-300 text-[11px] leading-relaxed">
-                      Transforming through centuries from <span className="font-semibold text-amber-200">{monumentData.constructionYear} CE</span> to <span className="font-semibold text-amber-200">2026 CE</span>.
-                    </p>
-                  </div>
-                </div>
-
-              </div>
-
-
-              {/* --------------------------------------------------- */}
-              {/* RIGHT PANEL: LARGE COMPARISON, YEAR SLIDER & STORY */}
-              {/* --------------------------------------------------- */}
-              <div className="lg:col-span-8 space-y-6">
-                
-                {/* Large Immersive Comparison Container */}
-                <div className="bg-white rounded-3xl border border-amber-200/90 shadow-lg p-5 md:p-6 space-y-5 relative overflow-hidden">
-                  
-                  {/* Top Header Row */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-100 pb-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-amber-800 bg-amber-100/80 px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                          Era: {currentEra.eraName}
-                        </span>
-                        <span className="text-xs font-bold text-amber-900 bg-yellow-100 px-2.5 py-1 rounded-lg">
-                          Year {selectedYear} CE
-                        </span>
-                      </div>
-                      <h3 className="font-serif font-bold text-stone-900 text-lg md:text-xl mt-1">
-                        Realistic AI Historical Reconstruction
-                      </h3>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setSplitPosition(prev => prev === 50 ? 100 : prev === 100 ? 0 : 50)}
-                        className="text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Layers className="h-3.5 w-3.5 text-amber-700" />
-                        <span>Toggle View Mode</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Image Comparison Box */}
-                  <div className="relative h-80 md:h-96 rounded-2xl overflow-hidden border border-amber-300/80 shadow-inner bg-stone-900 select-none">
-                    
-                    {/* Background Today Image */}
-                    <img 
-                      src={customImage || currentEra.todayImage || monumentData.currentImage} 
-                      alt={`${monumentData.name} - Modern View`} 
-                      className="absolute inset-0 w-full h-full object-cover" 
-                    />
-                    
-                    {/* Overlay Historical Image clipped by Split Position */}
-                    <div 
-                      className="absolute inset-0 overflow-hidden transition-all duration-300"
-                      style={{ width: `${splitPosition}%` }}
-                    >
-                      <img 
-                        src={customImage || currentEra.reconstructionImage || monumentData.currentImage} 
-                        alt={`${monumentData.name} - Historical Reconstruction (${selectedYear} CE)`} 
-                        className="w-full h-full object-cover max-w-none"
-                        style={{ 
-                          width: "100%", 
-                          height: "100%", 
-                          objectFit: "cover",
-                          filter: selectedYear < 2026 ? "sepia(0.15) saturate(1.1) contrast(1.05)" : "none" 
-                        }}
-                      />
-                      <div className="absolute top-4 left-4 bg-amber-950/90 text-amber-200 border border-amber-500/50 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1.5">
-                        <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-                        <span>Reconstruction: {monumentData.name} ({selectedYear} CE)</span>
-                      </div>
-                    </div>
-
-                    {/* Today Badge on Right */}
-                    <div className="absolute top-4 right-4 bg-black/70 text-white backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold border border-white/20 shadow-md flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span>Today (2026 CE)</span>
-                    </div>
-
-                    {/* Split Line Indicator */}
-                    <div 
-                      className="absolute top-0 bottom-0 w-1 bg-amber-400 cursor-ew-resize flex items-center justify-center shadow-lg"
-                      style={{ left: `${splitPosition}%` }}
-                    >
-                      <div className="w-7 h-7 rounded-full bg-amber-500 border-2 border-white text-stone-900 flex items-center justify-center shadow-md font-bold text-xs">
-                        ↔
-                      </div>
-                    </div>
-
-                    {/* Subtitle Bar overlay at bottom */}
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-stone-950 via-stone-950/80 to-transparent p-4 pt-8 text-white flex items-end justify-between gap-4">
-                      <div>
-                        <span className="text-[10px] text-amber-300 uppercase tracking-widest font-bold block flex items-center gap-1">
-                          <span>🏛 Historical Reconstruction of {monumentData.name}</span>
-                        </span>
-                        <p className="text-xs md:text-sm font-semibold text-stone-100">
-                          {currentEra.keyTransformations[0] || `Historical structures and architectural detail of ${monumentData.name}.`}
-                        </p>
-                      </div>
-                      <span className="text-[10px] bg-amber-900/80 border border-amber-600/80 px-2.5 py-1 rounded-lg text-amber-200 font-mono shrink-0 flex items-center gap-1">
-                        <span>✓ Verified Monument Lock</span>
-                      </span>
-                    </div>
-
-                  </div>
-
-                  {/* --------------------------------------------------- */}
-                  {/* 🕰 YEAR SLIDER CONTROLS */}
-                  {/* --------------------------------------------------- */}
-                  <div className="bg-gradient-to-r from-amber-900/5 via-amber-50 to-stone-100 p-5 rounded-2xl border border-amber-200/80 space-y-4">
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-amber-700 animate-spin-slow" />
-                        <h4 className="font-bold text-stone-900 text-sm md:text-base uppercase tracking-wider">
-                          🕰 YEAR SLIDER (TRAVEL BACK IN TIME)
-                        </h4>
-                      </div>
-
-                      <button
-                        onClick={() => setIsPlayingAuto(!isPlayingAuto)}
-                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                          isPlayingAuto 
-                            ? "bg-rose-700 text-white" 
-                            : "bg-amber-900 hover:bg-stone-950 text-white"
-                        }`}
-                      >
-                        {isPlayingAuto ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                        <span>{isPlayingAuto ? "Pause Auto-Travel" : "Auto-Play Timeline"}</span>
-                      </button>
-                    </div>
-
-                    {/* Slider Track */}
-                    <div className="space-y-2 pt-1">
-                      <div className="flex justify-between items-center text-xs font-bold font-mono">
-                        <span className="text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-md border border-amber-300">
-                          Construction Year: {monumentData.constructionYear} CE
-                        </span>
-                        <span className="text-amber-950 text-base font-serif font-extrabold underline decoration-amber-500 decoration-2">
-                          SELECTED: {selectedYear} CE
-                        </span>
-                        <span className="text-stone-700 bg-stone-100 px-2.5 py-0.5 rounded-md border border-stone-300">
-                          TODAY: 2026 CE
-                        </span>
-                      </div>
-
-                      <input
-                        type="range"
-                        min={monumentData.constructionYear || 1200}
-                        max={2026}
-                        step={25}
-                        value={selectedYear}
-                        onChange={(e) => setSelectedYear(Number(e.target.value))}
-                        className="w-full accent-amber-800 cursor-pointer h-2.5 bg-amber-200 rounded-lg"
-                      />
-
-                      <div className="flex justify-between text-[10px] text-stone-500 font-medium pt-0.5">
-                        <span>{monumentData.constructionYear} CE</span>
-                        <span>1400 CE</span>
-                        <span>1600 CE</span>
-                        <span>1800 CE</span>
-                        <span>1900 CE</span>
-                        <span>2026 CE (Today)</span>
-                      </div>
-                    </div>
-
-                    {/* Key Transformations Bullet List */}
-                    <div className="bg-white/90 p-3.5 rounded-xl border border-amber-200/70 text-xs space-y-2">
-                      <span className="font-bold text-amber-950 uppercase tracking-wider text-[11px] block flex items-center gap-1">
-                        <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                        Dynamic Transformations in {selectedYear} CE:
-                      </span>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-stone-700">
-                        {currentEra.keyTransformations.map((trans, tIdx) => (
-                          <div key={tIdx} className="flex items-start gap-1.5 font-medium">
-                            <span className="text-amber-600 font-bold">•</span>
-                            <span>{trans}</span>
-                          </div>
-                        ))}
-                        <div className="flex items-start gap-1.5 font-medium text-amber-900">
-                          <span className="text-amber-600 font-bold">•</span>
-                          <span>Broken structures complete • Missing sculptures reappear • Paint returns</span>
-                        </div>
-                        <div className="flex items-start gap-1.5 font-medium text-amber-900">
-                          <span className="text-amber-600 font-bold">•</span>
-                          <span>Gardens flourish • Bazaars appear • Historical clothing changes</span>
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-
-                </div>
-
-                {/* --------------------------------------------------- */}
-                {/* 🎭 AI STORYTELLING MODES */}
-                {/* --------------------------------------------------- */}
-                <div className="bg-white rounded-3xl border border-amber-200/90 shadow-md p-5 md:p-6 space-y-5">
-                  
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="p-1 bg-amber-100 text-amber-900 rounded-md text-base">🎭</span>
-                        <h4 className="font-bold text-stone-900 text-base md:text-lg">
-                          AI STORYTELLING MODES
-                        </h4>
-                      </div>
-                      <p className="text-xs text-stone-500 mt-0.5">
-                        Choose Perspective — Experience history through distinct narrative voices
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={handleToggleSpeech}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                        isSpeaking
-                          ? "bg-rose-700 text-white border-rose-800 animate-pulse"
-                          : "bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-300"
-                      }`}
-                    >
-                      {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4 text-amber-700" />}
-                      <span>{isSpeaking ? "Stop Narration" : "Listen Narration"}</span>
-                    </button>
-                  </div>
-
-                  {/* Mode Selector Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                    {storytellingModes.map((mode) => {
-                      const isActive = storyMode === mode.id;
-                      return (
-                        <button
-                          key={mode.id}
-                          onClick={() => setStoryMode(mode.id as any)}
-                          className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between h-24 ${
-                            isActive
-                              ? "bg-gradient-to-br from-amber-900 to-yellow-950 text-white border-amber-600 shadow-md ring-2 ring-amber-500/30"
-                              : "bg-stone-50/70 hover:bg-amber-50/80 text-stone-800 border-amber-200/70"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className={`p-1.5 rounded-lg ${isActive ? "bg-amber-800 text-white" : "bg-white text-stone-700"}`}>
-                              {mode.icon}
-                            </span>
-                            {isActive && <span className="w-2 h-2 rounded-full bg-amber-400"></span>}
-                          </div>
-
-                          <div>
-                            <span className="font-bold text-xs block leading-tight">{mode.title}</span>
-                            <span className={`text-[9px] block mt-0.5 line-clamp-1 ${isActive ? "text-amber-200" : "text-stone-500"}`}>
-                              {mode.tagline}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Dynamic Narration Box */}
-                  <div className="bg-gradient-to-br from-amber-900 via-amber-950 to-stone-900 text-white p-5 rounded-2xl border border-amber-700/80 shadow-md space-y-3 relative">
-                    <div className="flex items-center justify-between border-b border-amber-800/80 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <Crown className="h-4 w-4 text-amber-400" />
-                        <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                          {storytellingModes.find(m => m.id === storyMode)?.title} Perspective ({selectedYear} CE)
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-amber-200/80 italic font-mono">
-                        Grounding: Verified Historical Records
-                      </span>
-                    </div>
-
-                    <p className="text-xs md:text-sm leading-relaxed text-amber-50 font-serif italic p-1">
-                      "{currentNarration}"
-                    </p>
-                  </div>
-
-                </div>
-
-                {/* --------------------------------------------------- */}
-                {/* HISTORICAL SNAPSHOT */}
-                {/* --------------------------------------------------- */}
-                <div className="bg-white rounded-3xl border border-amber-200/90 shadow-sm p-5 md:p-6 space-y-4">
-                  <div className="flex items-center justify-between border-b border-amber-100 pb-3">
-                    <h4 className="font-bold text-stone-900 text-base font-serif flex items-center gap-2">
-                      📜 Historical Snapshot
-                    </h4>
-                    <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full border border-amber-300">
-                      Archival Summary
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60">
-                      <span className="block text-[10px] text-amber-800 font-bold uppercase">Builder / Patron</span>
-                      <span className="font-bold text-stone-900 text-xs mt-0.5 block">{monumentData.snapshot.builder}</span>
-                    </div>
-
-                    <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60">
-                      <span className="block text-[10px] text-amber-800 font-bold uppercase">Dynasty / Era</span>
-                      <span className="font-bold text-stone-900 text-xs mt-0.5 block">{monumentData.snapshot.dynasty}</span>
-                    </div>
-
-                    <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60">
-                      <span className="block text-[10px] text-amber-800 font-bold uppercase">Construction Year</span>
-                      <span className="font-bold text-stone-900 text-xs mt-0.5 block">{monumentData.snapshot.constructionYear}</span>
-                    </div>
-
-                    <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60">
-                      <span className="block text-[10px] text-amber-800 font-bold uppercase">Architectural Style</span>
-                      <span className="font-bold text-stone-900 text-xs mt-0.5 block">{monumentData.snapshot.architecturalStyle}</span>
-                    </div>
-
-                    <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60">
-                      <span className="block text-[10px] text-amber-800 font-bold uppercase">UNESCO Status</span>
-                      <span className="font-bold text-stone-900 text-xs mt-0.5 block">{monumentData.snapshot.unescoStatus}</span>
-                    </div>
-
-                    <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60">
-                      <span className="block text-[10px] text-amber-800 font-bold uppercase">Major Festivals</span>
-                      <span className="font-bold text-stone-900 text-xs mt-0.5 block">{monumentData.snapshot.majorFestivals}</span>
-                    </div>
-                  </div>
-
-                  {/* Historical Importance */}
-                  <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200 text-xs space-y-1">
-                    <span className="font-bold text-stone-900 uppercase tracking-wider text-[10px] block">Historical Importance</span>
-                    <p className="text-stone-700 leading-relaxed font-medium">
-                      {monumentData.snapshot.historicalImportance}
-                    </p>
-                  </div>
-
-                  {/* Interesting Facts */}
-                  <div className="space-y-2 pt-1">
-                    <span className="font-bold text-stone-900 uppercase tracking-wider text-[11px] block flex items-center gap-1">
-                      <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                      Interesting Historical Facts:
-                    </span>
-                    <div className="space-y-1.5">
-                      {monumentData.snapshot.interestingFacts.map((fact, fIdx) => (
-                        <div key={fIdx} className="bg-amber-50/40 p-2.5 rounded-xl border border-amber-200/50 text-xs text-stone-800 flex items-start gap-2 font-medium">
-                          <span className="text-amber-700 font-bold shrink-0">💡</span>
-                          <span>{fact}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* --------------------------------------------------- */}
-                {/* GEMINI INTEGRATION BADGE */}
-                {/* --------------------------------------------------- */}
-                <div className="bg-gradient-to-r from-amber-900 via-yellow-950 to-stone-900 text-white rounded-3xl p-5 border border-amber-700/80 shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <Sparkles className="h-4 w-4 text-amber-400 animate-pulse" />
-                      <span className="font-bold text-sm text-white">Powered by Google Gemini</span>
-                    </div>
-                    <p className="text-amber-200/80 text-xs">
-                      Combining Gemini Vision, Multimodal RAG, and AI Timeline Intelligence for living heritage.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
-                    <span className="bg-amber-800/80 text-amber-100 border border-amber-600/60 px-2.5 py-1 rounded-lg">✔ Gemini Vision</span>
-                    <span className="bg-amber-800/80 text-amber-100 border border-amber-600/60 px-2.5 py-1 rounded-lg">✔ Historical Reconstruction</span>
-                    <span className="bg-amber-800/80 text-amber-100 border border-amber-600/60 px-2.5 py-1 rounded-lg">✔ AI Image Generation</span>
-                    <span className="bg-amber-800/80 text-amber-100 border border-amber-600/60 px-2.5 py-1 rounded-lg">✔ Timeline Intelligence</span>
-                    <span className="bg-amber-800/80 text-amber-100 border border-amber-600/60 px-2.5 py-1 rounded-lg">✔ Multimodal AI</span>
-                  </div>
-                </div>
-
-              </div>
-
+      {/* ========================================================================= */}
+      {/* TAB 1: HERITAGE PUZZLE */}
+      {/* ========================================================================= */}
+      {activeTab === "puzzle" && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          {/* Section Header */}
+          <div className="bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white p-6 rounded-2xl border border-indigo-800 shadow-sm relative overflow-hidden">
+            <div className="relative z-10 space-y-1">
+              <h3 className="text-3xl font-black tracking-tight text-amber-300 flex items-center gap-2">
+                🏛 Heritage Puzzle
+              </h3>
+              <p className="text-sm font-medium text-indigo-200">
+                "Rebuild history, discover its story."
+              </p>
             </div>
-          </motion.div>
-        )}
+            <Puzzle className="absolute right-6 -bottom-4 h-32 w-32 text-indigo-800/30 pointer-events-none" />
+          </div>
 
-        {/* ========================================================= */}
-        {/* TAB 2: MY HERITAGE WALLET */}
-        {/* ========================================================= */}
-        {activeTab === "badges" && (
-          <motion.div
-            key="badges"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
-          >
-            {badges.map((badge) => (
-              <div 
-                key={badge.id}
-                className={`bg-white rounded-2xl border border-amber-200 p-5 space-y-4 relative overflow-hidden flex flex-col justify-between ${
-                  !badge.unlocked ? "opacity-60 bg-stone-50/50" : "shadow-sm hover:shadow-md transition-shadow"
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${badge.color} text-white flex items-center justify-center text-2xl shadow`}>
-                    {badge.unlocked ? badge.icon : "🔒"}
-                  </div>
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                    badge.rarity === "Epic" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"
-                  }`}>
-                    {badge.rarity}
-                  </span>
-                </div>
-
-                <div className="space-y-1 pt-2">
-                  <h4 className="font-bold text-stone-900 text-sm">{badge.name}</h4>
-                  <p className="text-[10px] text-stone-500 font-medium flex items-center gap-1">
-                    <MapPin className="h-3 w-3 text-amber-700" /> {badge.landmark}
-                  </p>
-                </div>
-
-                {badge.unlocked ? (
-                  <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200/60 text-[11px] text-amber-950 leading-relaxed italic">
-                    💡 "{badge.myth}"
-                  </div>
-                ) : (
-                  <div className="p-2.5 rounded-xl bg-stone-100 text-[11px] text-stone-400 font-mono text-center">
-                    🔒 Explore this monument in AI Time Machine to unlock.
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between border-t border-amber-100 pt-3 mt-1">
-                  <span className="text-[10px] text-stone-400 font-semibold uppercase">STATUS</span>
-                  <span className={`text-[10px] font-bold ${badge.unlocked ? "text-amber-800" : "text-stone-400"}`}>
-                    {badge.unlocked ? "✓ Collected in Wallet" : "Locked"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </motion.div>
-        )}
-
-        {/* ========================================================= */}
-        {/* TAB 3: CURATOR CERTIFICATE */}
-        {/* ========================================================= */}
-        {activeTab === "certificate" && (
-          <motion.div
-            key="certificate"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="max-w-2xl mx-auto"
-          >
-            {isEligibleForCertificate ? (
-              <div className="bg-amber-50/90 border-4 border-double border-amber-300 p-8 rounded-3xl shadow-lg relative overflow-hidden space-y-6 text-center">
-                <div className="absolute top-0 right-0 p-4 opacity-10 font-serif text-8xl pointer-events-none select-none">
-                  AI
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-mono tracking-widest text-amber-900 uppercase font-bold">
-                    UNESCO & AI GLOBAL HERITAGE FOUNDATION
-                  </div>
-                  <h3 className="text-2xl font-serif text-amber-950 font-bold">Certificate of Heritage Intelligence</h3>
-                </div>
-
-                <p className="text-xs text-stone-700 italic max-w-md mx-auto leading-relaxed">
-                  This certifies that the bearer has completed all AI Time Machine exploration challenges and unlocked all digital badges in their Heritage Wallet.
-                </p>
-
-                <div className="py-4 border-y border-amber-200 max-w-sm mx-auto space-y-1">
-                  <div className="text-xs font-bold text-amber-900 uppercase">HERITAGE EXPLORER EXCELLENCE</div>
-                  <div className="font-mono text-xs text-stone-600">Uniquely Generated Hash: <span className="font-bold text-stone-900">7A42-BB48-AE9E</span></div>
-                </div>
-
-                <div className="flex justify-between items-center px-8 text-left text-xs font-medium text-stone-600 pt-4">
-                  <div>
-                    <span className="block border-b border-stone-400 pb-1 font-semibold text-stone-900">Gemini AI Curator</span>
-                    <span className="text-[10px] text-stone-400 mt-1 block">Chief Advisor AI</span>
-                  </div>
-                  <div>
-                    <span className="block border-b border-stone-400 pb-1 font-semibold text-stone-900">Living Communities Trust</span>
-                    <span className="text-[10px] text-stone-400 mt-1 block">Affiliate Partner</span>
-                  </div>
-                </div>
-
-                <div className="pt-4">
-                  <button 
-                    onClick={() => alert("Certificate downloaded successfully!")}
-                    className="bg-amber-900 hover:bg-black text-white font-semibold text-xs px-6 py-2.5 rounded-xl shadow-md transition-all cursor-pointer"
-                  >
-                    Download Digital Copy
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white rounded-3xl border border-amber-200 p-8 text-center space-y-4">
-                <div className="text-4xl grayscale">📜</div>
-                <div className="space-y-1">
-                  <h4 className="font-bold text-stone-900 text-sm">Certificate is Currently Locked</h4>
-                  <p className="text-xs text-stone-500 max-w-sm mx-auto leading-relaxed">
-                    You need to collect all primary digital badges to qualify for the Chief Curator's Certificate of Heritage Intelligence.
-                  </p>
-                </div>
-
-                <div className="max-w-xs mx-auto space-y-1 pt-2">
-                  <div className="flex justify-between text-xs text-stone-600 font-semibold">
-                    <span>Badges Collected</span>
-                    <span>{unlockedCount} / {badges.length}</span>
-                  </div>
-                  <div className="w-full bg-amber-100 rounded-full h-1.5 overflow-hidden">
-                    <div 
-                      className="bg-amber-800 h-full transition-all"
-                      style={{ width: `${(unlockedCount / badges.length) * 100}%` }}
-                    />
-                  </div>
+          {/* Search Box Card */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700">
+                Enter a monument or heritage site
+              </label>
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative flex-1 w-full">
+                  <Search className="h-4 w-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleGeneratePuzzle()}
+                    placeholder="Enter a monument or heritage site..."
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 font-medium"
+                  />
                 </div>
 
                 <button
-                  onClick={() => {
-                    setBadges(prev => prev.map(b => ({ ...b, unlocked: true })));
-                    setScore(prev => prev + 300);
-                  }}
-                  className="bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold text-xs px-4 py-2 rounded-xl mt-2 transition-all cursor-pointer"
+                  onClick={() => handleGeneratePuzzle()}
+                  disabled={isLoading || !searchInput.trim()}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
-                  Demo Assist: Unlock all badges
+                  {isLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Generating Puzzle...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Puzzle className="h-4 w-4" />
+                      <span>Generate Puzzle</span>
+                    </>
+                  )}
                 </button>
               </div>
-            )}
-          </motion.div>
-        )}
+            </div>
 
-      </AnimatePresence>
+            {/* Examples Pill List */}
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                Examples:
+              </span>
+              {exampleMonuments.map((monument) => (
+                <button
+                  key={monument}
+                  onClick={() => {
+                    setSearchInput(monument);
+                    handleGeneratePuzzle(monument);
+                  }}
+                  className="text-xs px-3 py-1 rounded-lg bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-700 border border-gray-200 font-medium transition-all cursor-pointer"
+                >
+                  • {monument}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {errorMsg && (
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+              <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* PUZZLE GAME CANVAS */}
+          {monumentData && !isLoading && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                
+                {/* Puzzle Header Bar */}
+                <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-indigo-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <span className="text-[10px] uppercase font-extrabold text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-full border border-indigo-200 inline-block mb-1">
+                      Monument Puzzle Challenge
+                    </span>
+                    <h3 className="text-2xl font-black text-gray-900 tracking-tight">
+                      {monumentData.monumentName}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {monumentData.location || "World Heritage Site"} • Era {monumentData.historicalYear}
+                    </p>
+                  </div>
+
+                  {/* Difficulty Selection Buttons */}
+                  <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase px-2">Difficulty:</span>
+                    <button
+                      onClick={() => handleDifficultyChange("easy")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                        difficulty === "easy"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      Easy (3×3)
+                    </button>
+                    <button
+                      onClick={() => handleDifficultyChange("medium")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                        difficulty === "medium"
+                          ? "bg-amber-600 text-white shadow-sm"
+                          : "text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      Medium (4×4)
+                    </button>
+                    <button
+                      onClick={() => handleDifficultyChange("hard")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                        difficulty === "hard"
+                          ? "bg-rose-600 text-white shadow-sm"
+                          : "text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      Hard (5×5)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Puzzle Stats Display Bar */}
+                <div className="px-6 py-3 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-4 border-b border-slate-800">
+                  <div className="flex items-center gap-6 flex-wrap text-xs font-bold">
+                    {/* Progress Stat */}
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-emerald-400" />
+                      <span className="text-slate-400">Progress:</span>
+                      <span className="text-emerald-300 font-extrabold">{progressPercentage}% ({correctCount}/{totalTiles})</span>
+                    </div>
+
+                    {/* Timer Stat */}
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-amber-400" />
+                      <span className="text-slate-400">Timer:</span>
+                      <span className="text-amber-300 font-mono font-bold text-sm">{formatTimer(timerSeconds)}</span>
+                    </div>
+
+                    {/* Moves Stat */}
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-sky-400" />
+                      <span className="text-slate-400">Moves:</span>
+                      <span className="text-sky-300 font-extrabold">{moves}</span>
+                    </div>
+
+                    {/* Difficulty Badge */}
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-slate-800 text-[11px] font-extrabold text-indigo-300 border border-slate-700">
+                      <span>{difficulty.toUpperCase()} ({gridSize}×{gridSize})</span>
+                    </div>
+                  </div>
+
+                  {/* Puzzle Controls */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => resetPuzzleBoard(gridSize)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-700 cursor-pointer"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span>Shuffle</span>
+                    </button>
+
+                    {!isPuzzleSolved && (
+                      <button
+                        onClick={handleAutoSolve}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 text-xs font-bold transition-all flex items-center gap-1.5 border border-indigo-700 cursor-pointer"
+                      >
+                        <Zap className="h-3.5 w-3.5 text-amber-400" />
+                        <span>Auto Solve</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* PUZZLE GRID CANVAS AREA */}
+                <div className="p-6 bg-slate-950 flex flex-col items-center justify-center min-h-[380px]">
+                  {/* Solved Celebration Banner */}
+                  {isPuzzleSolved && showCelebration && (
+                    <motion.div 
+                      initial={{ scale: 0.8, opacity: 0 }} 
+                      animate={{ scale: 1, opacity: 1 }} 
+                      className="mb-6 w-full max-w-xl p-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white rounded-2xl shadow-xl text-center space-y-1.5 border border-emerald-400"
+                    >
+                      <div className="flex items-center justify-center gap-2 text-2xl font-black">
+                        <Sparkles className="h-6 w-6 text-amber-300 animate-spin" />
+                        <span>🎉 Puzzle Completed!</span>
+                      </div>
+                      <p className="text-sm font-bold text-emerald-100">
+                        Excellent work! You successfully reconstructed {monumentData.monumentName}.
+                      </p>
+                      <div className="text-xs font-mono text-amber-200 pt-1">
+                        Completed in {formatTimer(timerSeconds)} with {moves} moves!
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Puzzle Grid or Full Completed Image */}
+                  {isPuzzleSolved ? (
+                    <motion.div
+                      initial={{ scale: 0.95, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="relative p-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-amber-400 rounded-2xl shadow-2xl overflow-hidden max-w-full"
+                      style={{
+                        width: gridSize === 3 ? "420px" : gridSize === 4 ? "480px" : "520px",
+                        maxWidth: "100%",
+                        aspectRatio: "1 / 1"
+                      }}
+                    >
+                      <div className="relative w-full h-full rounded-xl overflow-hidden group">
+                        <img
+                          src={monumentImage}
+                          alt={monumentData.monumentName}
+                          className="w-full h-full object-cover rounded-xl transition-all duration-500"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent flex flex-col justify-end p-4 text-white">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300 bg-emerald-950/80 px-2.5 py-1 rounded-full border border-emerald-500/40 w-fit mb-1">
+                            ✓ Complete Monument Image Reconstructed
+                          </span>
+                          <h4 className="text-lg font-black text-amber-300 drop-shadow">
+                            {monumentData.monumentName}
+                          </h4>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <div 
+                      className="grid gap-1.5 p-2.5 bg-slate-900 rounded-2xl border-2 border-slate-800 shadow-2xl max-w-full overflow-hidden"
+                      style={{
+                        gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
+                        width: gridSize === 3 ? "420px" : gridSize === 4 ? "480px" : "520px",
+                        maxWidth: "100%",
+                        aspectRatio: "1 / 1"
+                      }}
+                    >
+                      {puzzlePieces.map((pieceVal, slotIndex) => {
+                        const isPieceCorrect = pieceVal === slotIndex;
+                        const isSelected = selectedTileIndex === slotIndex;
+                        
+                        // Calculate original piece row & col for background offset
+                        const origRow = Math.floor(pieceVal / gridSize);
+                        const origCol = pieceVal % gridSize;
+                        
+                        const bgPosX = (origCol / (gridSize - 1)) * 100;
+                        const bgPosY = (origRow / (gridSize - 1)) * 100;
+
+                        return (
+                          <div
+                            key={`slot_${slotIndex}`}
+                            draggable={!isPuzzleSolved}
+                            onDragStart={(e) => handleDragStart(e, slotIndex)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, slotIndex)}
+                            onClick={() => handleTileClick(slotIndex)}
+                            className={`relative rounded-lg overflow-hidden cursor-pointer select-none transition-all duration-200 group ${
+                              isSelected 
+                                ? "ring-4 ring-amber-400 ring-offset-2 ring-offset-slate-900 scale-95 z-20 shadow-xl" 
+                                : isPieceCorrect
+                                ? "border border-emerald-500/50 hover:border-emerald-400"
+                                : "border border-slate-700 hover:border-amber-400/60"
+                            }`}
+                            style={{
+                              backgroundImage: `url(${monumentImage})`,
+                              backgroundSize: `${gridSize * 100}% ${gridSize * 100}%`,
+                              backgroundPosition: `${bgPosX}% ${bgPosY}%`
+                            }}
+                          >
+                            {/* Correct piece indicator */}
+                            {isPieceCorrect && (
+                              <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-emerald-500/80 text-white flex items-center justify-center text-[9px] shadow-sm">
+                                ✓
+                              </div>
+                            )}
+
+                            {/* Selected Overlay */}
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-amber-500/20 flex items-center justify-center">
+                                <span className="text-xs font-black text-amber-300 bg-slate-950/80 px-2 py-0.5 rounded shadow">
+                                  Selected
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <p className="text-[11px] text-slate-400 text-center mt-4 italic">
+                    {isPuzzleSolved 
+                      ? "✨ History reconstructed! Scroll down to explore the historical overview and facts."
+                      : "Tip: Drag and drop or click any two tiles to swap their positions."}
+                  </p>
+                </div>
+              </div>
+
+              {/* REVEALED HISTORICAL CONTENT AFTER PUZZLE SOLVED */}
+              <AnimatePresence>
+                {isPuzzleSolved && (
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                    {/* History Overview Card */}
+                    <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                      <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
+                        <BookOpen className="h-5 w-5 text-indigo-600" />
+                        <h4 className="text-lg font-bold text-gray-900">History Overview</h4>
+                      </div>
+
+                      <div className="space-y-4 text-sm text-gray-700 leading-relaxed font-normal">
+                        {overviewParagraphs.length > 0 ? (
+                          overviewParagraphs.map((para, idx) => (
+                            <p key={idx} className="bg-gray-50/70 p-4 rounded-xl border border-gray-100">
+                              {para}
+                            </p>
+                          ))
+                        ) : (
+                          <p className="bg-gray-50/70 p-4 rounded-xl border border-gray-100">
+                            {monumentData.overviewDescription}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Historical Facts Card */}
+                    <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Landmark className="h-5 w-5 text-amber-600" />
+                          <h4 className="text-lg font-bold text-gray-900">Historical Facts</h4>
+                        </div>
+                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                          {monumentData.historicalFacts.length} Verified Facts
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {monumentData.historicalFacts.map((fact, idx) => (
+                          <div
+                            key={idx}
+                            className="p-4 rounded-xl bg-gradient-to-r from-amber-50/40 to-orange-50/30 border border-amber-200/80 flex items-start gap-3"
+                          >
+                            <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                              {idx + 1}
+                            </div>
+                            <p className="text-xs font-medium text-gray-800 leading-relaxed">
+                              {fact}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* CONTINUE TO QUIZ BUTTON */}
+                    <div className="bg-gradient-to-r from-indigo-900 to-slate-900 p-6 rounded-2xl text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg border border-indigo-800">
+                      <div className="space-y-1 text-center sm:text-left">
+                        <h4 className="text-lg font-extrabold text-amber-300">Ready to Test Your Knowledge?</h4>
+                        <p className="text-xs text-indigo-200">
+                          Take the 5-question Heritage Quiz based on this monument to unlock a new Heritage Badge.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => setActiveTab("quiz")}
+                        className="px-6 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition-all shadow-md flex items-center gap-2 shrink-0 cursor-pointer"
+                      >
+                        <span>Continue to Quiz</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: LEARN & QUIZ */}
+      {/* ========================================================================= */}
+      {activeTab === "quiz" && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          {!monumentData ? (
+            <div className="bg-white p-12 rounded-2xl border border-gray-200 text-center space-y-4">
+              <HelpCircle className="h-12 w-12 text-gray-300 mx-auto" />
+              <div className="space-y-1">
+                <h3 className="font-bold text-gray-900 text-lg">No Active Monument Quiz</h3>
+                <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                  Please solve or select a monument puzzle in the Heritage Puzzle tab first to generate your custom quiz.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveTab("puzzle")}
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-extrabold shadow-sm hover:bg-indigo-700 transition-all cursor-pointer"
+              >
+                Go to Heritage Puzzle
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Quiz Header Banner */}
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-200">
+                    Monument Heritage Quiz
+                  </span>
+                  <h3 className="text-xl font-extrabold text-gray-900 mt-1">
+                    {monumentData.monumentName} Quiz
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    5 questions based on the History Overview and Historical Facts.
+                  </p>
+                </div>
+
+                <div className="text-xs font-bold text-gray-700 bg-gray-50 px-3 py-2 rounded-xl border border-gray-200 self-start sm:self-auto">
+                  Question {currentQuestionIndex + 1} of {monumentData.quizQuestions.length}
+                </div>
+              </div>
+
+              {/* QUIZ SUBMITTED RESULTS VIEW */}
+              {isQuizSubmitted ? (
+                <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6 text-center">
+                  {(() => {
+                    const score = calculateScore();
+                    const rank = getRankTitle(score.correctCount);
+                    const passed = score.correctCount >= 4;
+
+                    return (
+                      <div className="space-y-6 max-w-xl mx-auto">
+                        <div className="space-y-2">
+                          <div className="inline-block p-4 bg-indigo-50 rounded-full text-indigo-600 mb-2">
+                            <Trophy className="h-10 w-10 text-amber-500" />
+                          </div>
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-black border ${rank.color}`}>
+                            {rank.title}
+                          </span>
+                          <h3 className="text-3xl font-black text-gray-900">
+                            You scored {score.correctCount} / {monumentData.quizQuestions.length}
+                          </h3>
+                          <p className="text-sm font-bold text-gray-600">
+                            Score: {score.percentage}%
+                          </p>
+                        </div>
+
+                        {/* BADGE UNLOCK ANNOUNCEMENT */}
+                        {passed ? (
+                          <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="p-6 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 text-slate-950 rounded-2xl shadow-xl space-y-2 border border-amber-300"
+                          >
+                            <div className="flex items-center justify-center gap-2 text-xl font-black">
+                              <Sparkles className="h-6 w-6 text-slate-950" />
+                              <span>🎉 Congratulations!</span>
+                            </div>
+                            <p className="text-sm font-extrabold text-slate-900">
+                              You unlocked a new Heritage Badge.
+                            </p>
+                            <p className="text-xs font-medium text-slate-800">
+                              Your historical mastery has been recorded in your Heritage Wallet.
+                            </p>
+                          </motion.div>
+                        ) : (
+                          <div className="p-5 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl space-y-1 text-xs font-semibold">
+                            <p className="text-sm font-extrabold text-amber-950">Keep exploring and try again to unlock this badge.</p>
+                            <p className="text-amber-800">You need 80% or higher (at least 4/5 correct) to earn the Heritage Badge.</p>
+                          </div>
+                        )}
+
+                        {/* QUESTION BY QUESTION BREAKDOWN */}
+                        <div className="space-y-3 text-left pt-4 border-t border-gray-100">
+                          <h4 className="text-xs font-extrabold text-gray-700 uppercase tracking-wider">
+                            Answer Breakdown
+                          </h4>
+                          {monumentData.quizQuestions.map((q, idx) => {
+                            const userAns = userAnswers[idx];
+                            const isCorrect = userAns === q.correctIndex;
+                            return (
+                              <div key={q.id} className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+                                isCorrect ? "bg-emerald-50/60 border-emerald-200 text-emerald-950" : "bg-rose-50/60 border-rose-200 text-rose-950"
+                              }`}>
+                                <div className="flex items-center justify-between font-bold">
+                                  <span>Q{idx + 1}. {q.question}</span>
+                                  <span>{isCorrect ? "✓ Correct" : "✗ Incorrect"}</span>
+                                </div>
+                                <p className="text-gray-600 font-medium">
+                                  Your answer: {q.options[userAns] || "Not answered"}
+                                </p>
+                                {!isCorrect && (
+                                  <p className="text-emerald-700 font-semibold">
+                                    Correct answer: {q.options[q.correctIndex]}
+                                  </p>
+                                )}
+                                {q.explanation && (
+                                  <p className="text-[11px] text-gray-500 italic pt-1">
+                                    💡 {q.explanation}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* ACTION BUTTONS */}
+                        <div className="flex items-center justify-center gap-3 pt-2">
+                          <button
+                            onClick={() => {
+                              setIsQuizSubmitted(false);
+                              setUserAnswers({});
+                              setCurrentQuestionIndex(0);
+                            }}
+                            className="px-5 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            <span>Retake Quiz</span>
+                          </button>
+
+                          <button
+                            onClick={() => setActiveTab("puzzle")}
+                            className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+                          >
+                            <Puzzle className="h-4 w-4" />
+                            <span>Solve Another Puzzle</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                /* SINGLE QUESTION ACTIVE STEPPER VIEW */
+                <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6">
+                  {(() => {
+                    const currentQ = monumentData.quizQuestions[currentQuestionIndex];
+                    if (!currentQ) return null;
+
+                    return (
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <span className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider">
+                            Question {currentQuestionIndex + 1} of {monumentData.quizQuestions.length}
+                          </span>
+                          <h4 className="text-lg font-black text-gray-900 leading-snug">
+                            {currentQ.question}
+                          </h4>
+                        </div>
+
+                        {/* Options List */}
+                        <div className="space-y-3">
+                          {currentQ.options.map((optionText, optIdx) => {
+                            const isSelected = userAnswers[currentQuestionIndex] === optIdx;
+                            return (
+                              <button
+                                key={optIdx}
+                                onClick={() => handleSelectOption(optIdx)}
+                                className={`w-full p-4 rounded-xl border text-left text-xs font-semibold transition-all flex items-center justify-between cursor-pointer ${
+                                  isSelected
+                                    ? "bg-indigo-50 border-indigo-600 text-indigo-950 ring-2 ring-indigo-600/20 shadow-sm"
+                                    : "bg-white border-gray-200 hover:border-gray-300 text-gray-800 hover:bg-gray-50/50"
+                                }`}
+                              >
+                                <span className="flex items-center gap-3">
+                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] ${
+                                    isSelected ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600"
+                                  }`}>
+                                    {String.fromCharCode(65 + optIdx)}
+                                  </span>
+                                  <span>{optionText}</span>
+                                </span>
+
+                                {isSelected && <Check className="h-4 w-4 text-indigo-600" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Navigation Footer */}
+                        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                          <button
+                            onClick={() => setCurrentQuestionIndex(i => Math.max(0, i - 1))}
+                            disabled={currentQuestionIndex === 0}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-100 disabled:opacity-40 transition-all cursor-pointer"
+                          >
+                            Previous
+                          </button>
+
+                          {currentQuestionIndex < monumentData.quizQuestions.length - 1 ? (
+                            <button
+                              onClick={() => setCurrentQuestionIndex(i => i + 1)}
+                              disabled={userAnswers[currentQuestionIndex] === undefined}
+                              className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold disabled:opacity-50 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+                            >
+                              <span>Next Question</span>
+                              <ArrowRight className="h-4 w-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={handleSubmitQuiz}
+                              disabled={Object.keys(userAnswers).length < monumentData.quizQuestions.length}
+                              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black disabled:opacity-50 transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              <span>Submit Quiz</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: HERITAGE WALLET */}
+      {/* ========================================================================= */}
+      {activeTab === "wallet" && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <HeritageWallet />
+        </motion.div>
+      )}
     </div>
   );
 }

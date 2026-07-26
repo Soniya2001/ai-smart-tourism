@@ -33,8 +33,12 @@ Our platform features a highly tactile, dark cosmic-slate UI theme designed to s
 ### 4. Local Business & Community Support
 * **Eco-tourism and Local Sourcing**: Recommends surrounding handcrafted workshops, local artisan boutiques, traditional restaurants (with must-try local dishes), and live cultural events to support community well-being and local livelihoods.
 
-### 5. AR Scavenger Hunt & Gamification
+### 5. AR Scavenger Hunt & Time Travel Puzzle
 * **Simulated Physical QR Scans**: Earn experience points (XP) and collect mythical badges (e.g., *Gopuram Master*, *Vimana Seeker*) by simulating physical QR plaque scans.
+* **Interactive Time-Travel Puzzle**: Solve spatial jigsaw puzzles reconstructed from authentic monument photographs across historical eras.
+* **Seamless Full-Image Completion**: Upon arranging all puzzle tiles correctly, tile partitions automatically dissolve to display a single, full-resolution, unsegmented photograph with completion badges and monument overlays.
+* **Authentic Monument Photography**: Integrates dynamic Wikipedia & Wikimedia Commons photograph fetching with rich curated image pairs for global monuments (Taj Mahal, Meenakshi Temple, Qutub Minar, Colosseum, Pyramids, etc.).
+* **Multi-Model AI Resilience**: Implements intelligent model fallback switching (`gemini-2.5-flash` → `gemini-2.0-flash` → localized rich datasets) to guarantee uninterrupted learning and quiz generation even under API rate limits.
 * **Heritage Certificate**: Accumulate all four master badges to unlock a personalized digital *Certificate of Heritage Intelligence* approved by the simulated Global Heritage Foundation.
 
 ### 6. Decision Intelligence Dashboard (Global Architecture)

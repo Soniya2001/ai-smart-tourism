@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   Compass, Landmark, Trophy, Sparkles, MapPin, 
   BookOpen, HelpCircle, Heart, Star, Users, ArrowRight, Github, Clock, 
-  ShieldCheck, HeartHandshake, Lock, LogOut, UserCheck
+  ShieldCheck, HeartHandshake, Lock, LogOut, UserCheck, Puzzle
 } from "lucide-react";
 
 import TravelPlanner from "./components/TravelPlanner";
@@ -47,6 +47,7 @@ export default function App() {
   const publicModules = [
     { id: "planner", label: "Smart Travel Planner", icon: <Compass className="h-4 w-4 text-teal-600 fill-teal-500" />, desc: "Personalized, crowd-aware plans" },
     { id: "explorer", label: "Multimodal Heritage Explorer", icon: <Landmark className="h-4 w-4 text-amber-700" />, desc: "Gemini Vision & Audio Guide" },
+    { id: "timetravel", label: "Heritage Puzzle & Quiz", icon: <Puzzle className="h-4 w-4 text-indigo-600" />, desc: "Rebuild history & test your knowledge" },
     { id: "feedback", label: "Public Feedback", icon: <Star className="h-4 w-4 text-amber-500 fill-amber-500" />, desc: "Rate monument ratings, photos & reviews" },
     { id: "donation", label: "Donate for Tourism", icon: <Heart className="h-4 w-4 text-emerald-600 fill-emerald-500" />, desc: "Select location, adopt & click to pay" }
   ];
@@ -148,7 +149,7 @@ export default function App() {
 
             {/* Public Navigation Modules */}
             <section id="module-workspace" className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                 {publicModules.map((mod) => {
                   const active = activeModule === mod.id;
                   return (
@@ -197,6 +198,17 @@ export default function App() {
                       exit={{ opacity: 0, y: -10 }}
                     >
                       <HeritageExplorer />
+                    </motion.div>
+                  )}
+
+                  {activeModule === "timetravel" && (
+                    <motion.div
+                      key="timetravel"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                    >
+                      <ARTreasureHunt />
                     </motion.div>
                   )}
 
