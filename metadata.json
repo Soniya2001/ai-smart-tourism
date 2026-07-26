@@ -1,6 +1,6 @@
 {
-  "name": "AI Smart Tourism & Heritage Intelligence Platform",
-  "description": "An interactive AI-powered travel planner, heritage explorer with computer vision, voice guide, local business connector, gamified treasure hunt, and analytics dashboard.",
+  "name": "Oor Payana",
+  "description": "Discover the soul of every city.",
   "requestFramePermissions": ["camera", "microphone", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -4,9 +4,11 @@ import {
   Camera, Upload, Sparkles, BookOpen, Landmark, MapPin, 
   ChevronRight, Languages, Volume2, VolumeX, MessageSquare, 
   ShoppingBag, Award, HelpCircle, RefreshCw, AlertCircle, 
-  CornerDownRight, Send, ArrowRight, Star, Heart, Clock, Play, Pause
+  CornerDownRight, Send, ArrowRight, Star, Heart, Clock, Play, Pause,
+  Crown, UserCheck
 } from "lucide-react";
 import { HeritageMonument, PRESET_MONUMENTS } from "../types";
+import { HistoricalPersonality, getPersonalitiesForMonument } from "../lib/personalitiesData";
 
 export default function HeritageExplorer() {
   const [selectedPreset, setSelectedPreset] = useState<string>("meenakshi");
@@ -17,6 +19,10 @@ export default function HeritageExplorer() {
 
   // Tabs: facts, history, architecture, legends, timeline, businesses, quiz
   const [activeTab, setActiveTab] = useState<string>("history");
+
+  // Historical Personalities state
+  const [personalitiesList, setPersonalitiesList] = useState<HistoricalPersonality[]>([]);
+  const [selectedPersonality, setSelectedPersonality] = useState<HistoricalPersonality | null>(null);
 
   // Camera & Image upload state
   const [cameraActive, setCameraActive] = useState<boolean>(false);
@@ -36,6 +42,8 @@ export default function HeritageExplorer() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<string>("Kore"); // Kore, Zephyr, Puck, Charon, Fenrir
+  const [voiceEngine, setVoiceEngine] = useState<"gemini" | "browser">("browser"); // Default to browser since it supports translation & fallback 100%
+  const [playingTab, setPlayingTab] = useState<"history" | "architecture" | "legends" | null>(null);
 
   // Quiz state
   const [quizScore, setQuizScore] = useState<number>(0);
@@ -63,17 +71,28 @@ export default function HeritageExplorer() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory]);
 
-  // Cleanup audio
+  // Track last fetched parameters to prevent duplicate fetching
+  const lastFetchedRef = useRef<string>("");
+  const fetchCounterRef = useRef<number>(0);
+
+  // Clean up audio & speech on unmount, and trigger voice load
   useEffect(() => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.getVoices();
+    }
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
+      }
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);
 
   // Fetch Heritage details on selection/load
-  const fetchHeritageDetails = async (nameQuery?: string, base64Image?: string) => {
+  const fetchHeritageDetails = async (presetId?: string, base64Image?: string, lang?: string) => {
+    const currentFetchId = ++fetchCounterRef.current;
     setLoading(true);
     setError(null);
     setMonument(null);
@@ -84,21 +103,19 @@ export default function HeritageExplorer() {
     setQuizSubmitted(false);
     setQuizCompleted(false);
 
-    // Stop audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-      setAudioUrl(null);
-    }
+    // Stop active audio
+    stopPlayback();
 
     try {
+      const activeLanguage = lang || targetLanguage;
       const payload: any = {
-        targetLanguage
+        targetLanguage: activeLanguage
       };
       if (base64Image) {
         payload.image = base64Image;
       } else {
-        const queryName = nameQuery || PRESET_MONUMENTS.find(p => p.id === selectedPreset)?.name || "Madurai Meenakshi Temple";
+        const idToQuery = presetId || selectedPreset || "meenakshi";
+        const queryName = PRESET_MONUMENTS.find(p => p.id === idToQuery)?.name || "Madurai Meenakshi Temple";
         payload.name = queryName;
       }
 
@@ -108,34 +125,45 @@ export default function HeritageExplorer() {
         body: JSON.stringify(payload)
       });
 
+      if (currentFetchId !== fetchCounterRef.current) return;
+
       if (!response.ok) {
         throw new Error("Unable to identify or fetch details for this heritage monument.");
       }
 
       const data = await response.json();
+      if (currentFetchId !== fetchCounterRef.current) return;
       setMonument(data);
       setActiveTab("history");
 
-      // Set initial chatbot context
+      // Load historical personalities for this monument
+      const activePersonalities = getPersonalitiesForMonument(data.name);
+      setPersonalitiesList(activePersonalities);
+      const initialPers = activePersonalities[0];
+      setSelectedPersonality(initialPers);
+
+      // Set initial chatbot context with selected personality greeting
       setChatHistory([
         {
           role: "model",
-          parts: [{ text: `Welcome to ${data.name}! I am your AI Heritage Companion. Feel free to ask me any questions about the history, architectural style, or local folk tales surrounding this place.` }]
+          parts: [{ text: initialPers.greeting }]
         }
       ]);
     } catch (err: any) {
+      if (currentFetchId !== fetchCounterRef.current) return;
       console.error(err);
       setError(err.message || "An error occurred while recognizing monument.");
     } finally {
-      setLoading(false);
+      if (currentFetchId === fetchCounterRef.current) {
+        setLoading(false);
+      }
     }
   };
 
+  // Initial load only
   useEffect(() => {
-    if (selectedPreset && !imagePreview) {
-      fetchHeritageDetails();
-    }
-  }, [selectedPreset, targetLanguage]);
+    fetchHeritageDetails("meenakshi", undefined, targetLanguage);
+  }, []);
 
   // Web camera controls
   const startCamera = async () => {
@@ -172,8 +200,9 @@ export default function HeritageExplorer() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL("image/jpeg");
         setImagePreview(dataUrl);
+        setSelectedPreset("");
         stopCamera();
-        fetchHeritageDetails(undefined, dataUrl);
+        fetchHeritageDetails(undefined, dataUrl, targetLanguage);
       }
     }
   };
@@ -182,24 +211,40 @@ export default function HeritageExplorer() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setLoading(true);
+      setMonument(null);
+      setError(null);
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result as string;
         setImagePreview(result);
         setSelectedPreset("");
-        fetchHeritageDetails(undefined, result);
+        fetchHeritageDetails(undefined, result, targetLanguage);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // Chat Guide action
-  const sendChatMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatMessage.trim() || chatLoading || !monument) return;
+  // Personality switch action
+  const handleSelectPersonality = (p: HistoricalPersonality) => {
+    if (selectedPersonality?.id === p.id) return;
+    setSelectedPersonality(p);
+    setChatHistory([
+      {
+        role: "model",
+        parts: [{ text: p.greeting }]
+      }
+    ]);
+  };
 
-    const userMessage = chatMessage;
+  // Chat Guide action
+  const sendChatMessage = async (e?: React.FormEvent, directMessage?: string) => {
+    if (e) e.preventDefault();
+    const msgToSend = directMessage || chatMessage;
+    if (!msgToSend.trim() || chatLoading || !monument || !selectedPersonality) return;
+
     setChatMessage("");
+    const userMessage = msgToSend;
     
     // Add user message to UI
     const updatedHistory = [
@@ -210,19 +255,31 @@ export default function HeritageExplorer() {
     setChatLoading(true);
 
     try {
+      const systemInstruction = `You are playing the role of ${selectedPersonality.name} (${selectedPersonality.role}, ${selectedPersonality.period}, ${selectedPersonality.dynastyOrBackground}), connected to the monument "${monument.name}" in ${monument.location}.
+
+CRITICAL RAG & GROUNDING INSTRUCTIONS:
+1. Speak ALWAYS in character as ${selectedPersonality.name} from your specific historical perspective, tone, and time period. Use polite, respectful, and historically grounded language.
+2. Ground all answers strictly in verified historical records, archaeological findings, and authentic folklore about ${monument.name}.
+3. Do NOT fabricate historical events or pretend to know about modern events beyond your era.
+4. If asked about information that is unavailable or unverified in historical records, respond with:
+"Historical records do not provide enough verified information to answer this accurately."
+5. You MUST respond in the requested language: "${targetLanguage}". Keep answers concise, educational, and engaging (2-4 sentences).`;
+
       const response = await fetch("/api/heritage/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage,
-          history: updatedHistory.slice(0, updatedHistory.length - 1), // exclude the last one since we send it separately
-          systemInstruction: `You are an expert heritage guide at ${monument.name} situated in ${monument.location}. 
-          Answer tourist queries with deep historical context, architectural detail, and fascinating tales. Keep explanations highly immersive and friendly.`
+          history: updatedHistory.slice(0, updatedHistory.length - 1),
+          systemInstruction,
+          personality: selectedPersonality,
+          monumentName: monument.name,
+          targetLanguage
         })
       });
 
       if (!response.ok) {
-        throw new Error("Failed to receive response from your guide.");
+        throw new Error("Failed to receive response from historical figure.");
       }
 
       const data = await response.json();
@@ -231,77 +288,182 @@ export default function HeritageExplorer() {
       console.error(err);
       setChatHistory(prev => [
         ...prev,
-        { role: "model", parts: [{ text: `I apologize, I am having trouble connecting to my local archives right now. Please try again! Error: ${err.message}` }] }
+        { role: "model", parts: [{ text: `I apologize, traveler. Historical archives are currently inaccessible. Error: ${err.message}` }] }
       ]);
     } finally {
       setChatLoading(false);
     }
   };
 
-  // TTS Narrator
-  const generateVoiceGuide = async () => {
+  // TTS & Browser Voice player
+  const startPlayback = async (type: "history" | "architecture" | "legends") => {
     if (!monument) return;
-    
-    // Select correct narration text based on active tab
+
+    // Stop any existing playback first
+    stopPlayback();
+
     let speechText = "";
-    if (activeTab === "history") {
-      speechText = `Welcome to ${monument.name} in ${monument.location}. Let me guide you through its historical timeline. ${monument.history.substring(0, 400)}`;
-    } else if (activeTab === "architecture") {
-      speechText = `The structural style of ${monument.name} is magnificent. Here is a guide to its architectural elements: ${monument.architecture.substring(0, 400)}`;
-    } else {
-      speechText = `This is ${monument.name}. Built in ${monument.quickFacts.established} by ${monument.quickFacts.builder}. Enjoy your smart heritage journey!`;
+    if (type === "history") {
+      speechText = `Welcome to ${monument.name} in ${monument.location}. Let me walk you through its history. ${monument.history}`;
+    } else if (type === "architecture") {
+      speechText = `Let's explore the architectural style of ${monument.name}. ${monument.architecture}`;
+    } else if (type === "legends") {
+      speechText = `The sacred legends and folklore of ${monument.name} are remarkable. ${monument.legends}`;
     }
 
-    setAudioLoading(true);
-    try {
-      const response = await fetch("/api/heritage/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: speechText,
-          voiceName: selectedVoice
-        })
-      });
+    // Clean up text (strip simple formatting and limit characters for clean synthetic audio)
+    const cleanText = speechText.replace(/[*#_`\-]/g, "").substring(0, 500);
 
-      if (!response.ok) {
-        throw new Error("TTS generation failed");
+    setPlayingTab(type);
+    setIsPlaying(true);
+
+    if (voiceEngine === "browser") {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        
+        setTimeout(() => {
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          (window as any).activeSpeechUtterance = utterance;
+          
+          // Map target language string to standard locales
+          const langMap: Record<string, string> = {
+            "English": "en-US",
+            "Tamil": "ta-IN",
+            "Hindi": "hi-IN",
+            "Telugu": "te-IN",
+            "Kannada": "kn-IN",
+            "Spanish": "es-ES",
+            "French": "fr-FR",
+            "German": "de-DE",
+            "Japanese": "ja-JP",
+            "Mandarin": "zh-CN"
+          };
+          utterance.lang = langMap[targetLanguage] || "en-US";
+          
+          // Match browser voice
+          const voices = window.speechSynthesis.getVoices();
+          const matchingVoice = voices.find(v => v.lang.startsWith(utterance.lang));
+          if (matchingVoice) {
+            utterance.voice = matchingVoice;
+          }
+
+          utterance.onend = () => {
+            setIsPlaying(false);
+            setPlayingTab(null);
+            (window as any).activeSpeechUtterance = null;
+          };
+          utterance.onerror = (e) => {
+            console.error("Native speech synthesis error:", e);
+            setIsPlaying(false);
+            setPlayingTab(null);
+            (window as any).activeSpeechUtterance = null;
+          };
+
+          window.speechSynthesis.speak(utterance);
+          
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+        }, 150);
+      } else {
+        alert("Native device speech synthesis is not supported on this browser.");
+        setIsPlaying(false);
+        setPlayingTab(null);
       }
+    } else {
+      // Gemini AI Premium TTS Engine
+      setAudioLoading(true);
+      try {
+        const response = await fetch("/api/heritage/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: cleanText,
+            voiceName: selectedVoice
+          })
+        });
 
-      const data = await response.json();
-      const base64Audio = data.audio;
-      const url = `data:audio/mp3;base64,${base64Audio}`;
-      setAudioUrl(url);
+        if (!response.ok) {
+          throw new Error("Gemini AI TTS service unavailable.");
+        }
 
-      if (audioRef.current) {
-        audioRef.current.pause();
+        const data = await response.json();
+        const url = `data:audio/mp3;base64,${data.audio}`;
+        setAudioUrl(url);
+
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = () => {
+          setIsPlaying(false);
+          setPlayingTab(null);
+        };
+        audio.onerror = () => {
+          setIsPlaying(false);
+          setPlayingTab(null);
+        };
+        await audio.play();
+      } catch (err) {
+        console.error(err);
+        // Fallback gracefully to browser SpeechSynthesis
+        setVoiceEngine("browser");
+        // Trigger speaking using browser engine instead
+        setTimeout(() => {
+          window.speechSynthesis.cancel();
+          setTimeout(() => {
+            const fallbackUtterance = new SpeechSynthesisUtterance(cleanText);
+            (window as any).activeSpeechUtterance = fallbackUtterance;
+            const langMap: Record<string, string> = {
+              "English": "en-US", "Tamil": "ta-IN", "Hindi": "hi-IN", "Telugu": "te-IN",
+              "Kannada": "kn-IN", "Spanish": "es-ES", "French": "fr-FR", "German": "de-DE",
+              "Japanese": "ja-JP", "Mandarin": "zh-CN"
+            };
+            fallbackUtterance.lang = langMap[targetLanguage] || "en-US";
+            fallbackUtterance.onend = () => {
+              setIsPlaying(false);
+              setPlayingTab(null);
+              (window as any).activeSpeechUtterance = null;
+            };
+            fallbackUtterance.onerror = () => {
+              setIsPlaying(false);
+              setPlayingTab(null);
+              (window as any).activeSpeechUtterance = null;
+            };
+            window.speechSynthesis.speak(fallbackUtterance);
+            if (window.speechSynthesis.paused) {
+              window.speechSynthesis.resume();
+            }
+          }, 150);
+        }, 100);
+      } finally {
+        setAudioLoading(false);
       }
-
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onended = () => setIsPlaying(false);
-      audio.play();
-      setIsPlaying(true);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to generate voice narration. Make sure your GEMINI_API_KEY supports TTS modality.");
-    } finally {
-      setAudioLoading(false);
     }
   };
 
-  const toggleAudio = () => {
-    if (!audioRef.current) {
-      generateVoiceGuide();
-      return;
-    }
-    if (isPlaying) {
+  const stopPlayback = () => {
+    setIsPlaying(false);
+    setPlayingTab(null);
+    if (audioRef.current) {
       audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play();
-      setIsPlaying(true);
+      audioRef.current = null;
+    }
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
     }
   };
+
+  const togglePlayback = (type: "history" | "architecture" | "legends") => {
+    if (isPlaying && playingTab === type) {
+      stopPlayback();
+    } else {
+      startPlayback(type);
+    }
+  };
+
+  // Reset audio playback on tab or monument change to prevent sound bleed
+  useEffect(() => {
+    stopPlayback();
+  }, [activeTab, monument]);
 
   // Quiz interactive controller
   const handleQuizAnswer = (optionIdx: number) => {
@@ -350,14 +512,17 @@ export default function HeritageExplorer() {
           </p>
         </div>
 
-        {/* Language selector & Presets */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-3 py-2 rounded-xl text-xs">
             <Languages className="h-3.5 w-3.5 text-gray-400" />
             <span className="text-gray-500">Language:</span>
             <select
               value={targetLanguage}
-              onChange={(e) => setTargetLanguage(e.target.value)}
+              onChange={(e) => {
+                const newLang = e.target.value;
+                setTargetLanguage(newLang);
+                fetchHeritageDetails(selectedPreset || undefined, imagePreview || undefined, newLang);
+              }}
               className="font-semibold text-gray-700 bg-transparent focus:outline-none"
             >
               {languagesList.map((lang) => (
@@ -384,6 +549,7 @@ export default function HeritageExplorer() {
                   onClick={() => {
                     setSelectedPreset(preset.id);
                     setImagePreview(null);
+                    fetchHeritageDetails(preset.id, undefined, targetLanguage);
                   }}
                   className={`w-full p-3 rounded-xl border text-left flex gap-3 transition-all ${
                     selectedPreset === preset.id && !imagePreview
@@ -464,8 +630,20 @@ export default function HeritageExplorer() {
 
               {imagePreview && (
                 <div className="relative rounded-xl overflow-hidden border border-amber-200 bg-amber-50/20 p-2 space-y-2">
-                  <div className="text-[10px] font-semibold text-amber-800 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3 animate-pulse" /> Scanning uploaded image...
+                  <div className="text-[10px] font-semibold flex items-center gap-1">
+                    {loading ? (
+                      <span className="text-amber-800 flex items-center gap-1">
+                        <Sparkles className="h-3 w-3 animate-pulse text-amber-600" /> Scanning uploaded image...
+                      </span>
+                    ) : error ? (
+                      <span className="text-red-700 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 text-red-500" /> Scanning failed
+                      </span>
+                    ) : (
+                      <span className="text-emerald-800 flex items-center gap-1">
+                        <Sparkles className="h-3 w-3 text-emerald-600" /> Image analyzed successfully
+                      </span>
+                    )}
                   </div>
                   <img 
                     src={imagePreview} 
@@ -476,6 +654,7 @@ export default function HeritageExplorer() {
                     onClick={() => {
                       setImagePreview(null);
                       setSelectedPreset("meenakshi");
+                      fetchHeritageDetails("meenakshi", undefined, targetLanguage);
                     }}
                     className="text-[10px] text-gray-400 hover:text-gray-600 block text-right underline"
                   >
@@ -494,6 +673,7 @@ export default function HeritageExplorer() {
           <AnimatePresence mode="wait">
             {loading && (
               <motion.div
+                key="loading"
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -15 }}
@@ -514,8 +694,10 @@ export default function HeritageExplorer() {
 
             {error && (
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                key="error"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
                 className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl flex items-start gap-3"
               >
                 <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
@@ -523,7 +705,7 @@ export default function HeritageExplorer() {
                   <h4 className="font-semibold text-sm">Failed to explore monument</h4>
                   <p className="text-xs text-red-700 mt-1">{error}</p>
                   <button
-                    onClick={() => fetchHeritageDetails()}
+                    onClick={() => fetchHeritageDetails(undefined, imagePreview || undefined)}
                     className="text-xs font-semibold text-red-900 underline mt-2"
                   >
                     Retry Loading
@@ -534,10 +716,28 @@ export default function HeritageExplorer() {
 
             {!loading && !error && monument && (
               <motion.div
+                key="monument"
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
                 className="space-y-6"
               >
+                {/* API Status Banner */}
+                {monument.apiStatus && (monument.apiStatus.status === "exhausted" || monument.apiStatus.status === "invalid_key") && (
+                  <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4.5 space-y-2 text-xs text-amber-900 shadow-sm">
+                    <div className="flex items-center gap-2 font-bold">
+                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>Gemini API Status Notice: Operating in Offline Fallback Mode</span>
+                    </div>
+                    <p className="text-amber-800 leading-relaxed font-sans">
+                      {monument.apiStatus.message}
+                    </p>
+                    <div className="text-[10px] text-amber-600/90 font-mono mt-1">
+                      Our system automatically loaded high-quality pre-cached regional plans so your travel drafting works without interruption.
+                    </div>
+                  </div>
+                )}
+
                 {/* Header Info */}
                 <div className="bg-amber-950 text-white p-6 rounded-2xl relative overflow-hidden">
                   <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none">
@@ -582,6 +782,156 @@ export default function HeritageExplorer() {
                   </div>
                 </div>
 
+                {/* 🎧 VOICE TOUR GUIDE COMPANION PANEL */}
+                <div id="voice-tour-guide-panel" className="bg-gradient-to-br from-amber-50 to-orange-50/50 border border-amber-200/60 rounded-2xl p-5 space-y-4 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/40">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-amber-100 p-2 rounded-xl text-amber-800">
+                        <Volume2 className={`h-5 w-5 ${isPlaying ? "animate-bounce" : ""}`} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-amber-950 text-sm tracking-tight flex items-center gap-1.5">
+                          <span>Voice Tour Guide Console</span>
+                          {isPlaying && (
+                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 text-[9px] uppercase font-mono tracking-widest animate-pulse">
+                              Active Guide
+                            </span>
+                          )}
+                        </h4>
+                        <p className="text-[10px] text-amber-800/80">
+                          Select narrative, choose engine, and listen to immersive audio.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Engine selection toggle */}
+                    <div className="flex items-center bg-amber-100/60 p-1 rounded-xl border border-amber-200/40 self-start sm:self-auto shrink-0">
+                      <button
+                        onClick={() => { stopPlayback(); setVoiceEngine("browser"); }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+                          voiceEngine === "browser"
+                            ? "bg-white text-amber-950 shadow-sm"
+                            : "text-amber-800 hover:text-amber-950"
+                        }`}
+                      >
+                        📱 Device Speech ({targetLanguage})
+                      </button>
+                      <button
+                        onClick={() => { stopPlayback(); setVoiceEngine("gemini"); }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all flex items-center gap-1 ${
+                          voiceEngine === "gemini"
+                            ? "bg-white text-amber-950 shadow-sm"
+                            : "text-amber-800 hover:text-amber-950"
+                        }`}
+                      >
+                        🌟 Gemini AI (EN)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                    {/* Controls section */}
+                    <div className="md:col-span-7 flex flex-col sm:flex-row gap-2">
+                      <button
+                        onClick={() => togglePlayback("history")}
+                        disabled={audioLoading}
+                        className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border font-semibold text-xs transition-all ${
+                          playingTab === "history" && isPlaying
+                            ? "bg-amber-700 text-white border-amber-700 shadow-sm"
+                            : "bg-white hover:bg-amber-50 text-gray-800 border-gray-200"
+                        }`}
+                      >
+                        {audioLoading && playingTab === "history" ? (
+                          <RefreshCw className="h-4 w-4 animate-spin text-amber-600" />
+                        ) : playingTab === "history" && isPlaying ? (
+                          <><Pause className="h-4 w-4 text-white" /> Pause History</>
+                        ) : (
+                          <><Play className="h-4 w-4 text-amber-700" /> Play History</>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => togglePlayback("architecture")}
+                        disabled={audioLoading}
+                        className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border font-semibold text-xs transition-all ${
+                          playingTab === "architecture" && isPlaying
+                            ? "bg-amber-700 text-white border-amber-700 shadow-sm"
+                            : "bg-white hover:bg-amber-50 text-gray-800 border-gray-200"
+                        }`}
+                      >
+                        {audioLoading && playingTab === "architecture" ? (
+                          <RefreshCw className="h-4 w-4 animate-spin text-amber-600" />
+                        ) : playingTab === "architecture" && isPlaying ? (
+                          <><Pause className="h-4 w-4 text-white" /> Pause Architecture</>
+                        ) : (
+                          <><Play className="h-4 w-4 text-amber-700" /> Play Architecture</>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => togglePlayback("legends")}
+                        disabled={audioLoading}
+                        className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border font-semibold text-xs transition-all ${
+                          playingTab === "legends" && isPlaying
+                            ? "bg-amber-700 text-white border-amber-700 shadow-sm"
+                            : "bg-white hover:bg-amber-50 text-gray-800 border-gray-200"
+                        }`}
+                      >
+                        {audioLoading && playingTab === "legends" ? (
+                          <RefreshCw className="h-4 w-4 animate-spin text-amber-600" />
+                        ) : playingTab === "legends" && isPlaying ? (
+                          <><Pause className="h-4 w-4 text-white" /> Pause Folklore</>
+                        ) : (
+                          <><Play className="h-4 w-4 text-amber-700" /> Play Folklore</>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Secondary voice/accent controls */}
+                    <div className="md:col-span-5 bg-amber-100/30 p-3 rounded-xl border border-amber-200/20 flex items-center justify-between gap-3">
+                      {voiceEngine === "gemini" ? (
+                        <>
+                          <span className="text-[10px] text-amber-900 font-semibold shrink-0">AI Persona:</span>
+                          <select
+                            value={selectedVoice}
+                            onChange={(e) => { stopPlayback(); setSelectedVoice(e.target.value); }}
+                            className="w-full text-[10px] bg-white border border-amber-200/60 rounded px-2 py-1 text-gray-700 focus:outline-none"
+                          >
+                            {voicesList.map(v => (
+                              <option key={v.name} value={v.name}>{v.desc}</option>
+                            ))}
+                          </select>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 text-[10px] text-amber-900 font-medium">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                          <span>Translated to <strong className="font-semibold text-amber-950">{targetLanguage}</strong> using device synthesizer.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Waveform Visualization when playing */}
+                  {isPlaying && (
+                    <div className="bg-amber-950/90 text-amber-100 text-[10px] p-2.5 rounded-xl flex items-center justify-between gap-4">
+                      <span className="font-medium truncate max-w-xs md:max-w-md">
+                        🔊 Narrating: <span className="text-amber-300 font-semibold">
+                          {playingTab === "history" && "Historical Background Timeline"}
+                          {playingTab === "architecture" && "Architectural Carvings & Designs"}
+                          {playingTab === "legends" && "Folklore & Mythological Narratives"}
+                        </span>
+                      </span>
+                      <div className="flex items-center gap-0.5 h-3">
+                        <span className="w-0.5 bg-amber-400 h-1.5 animate-[pulse_1s_infinite]" />
+                        <span className="w-0.5 bg-amber-400 h-3 animate-[pulse_0.7s_infinite_0.1s]" />
+                        <span className="w-0.5 bg-amber-400 h-2 animate-[pulse_0.9s_infinite_0.2s]" />
+                        <span className="w-0.5 bg-amber-400 h-3 animate-[pulse_0.6s_infinite_0.3s]" />
+                        <span className="w-0.5 bg-amber-400 h-1 animate-[pulse_0.8s_infinite_0.4s]" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Main Content Tabs */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                   <div className="flex bg-gray-50 border-b border-gray-200 overflow-x-auto scrollbar-none">
@@ -618,32 +968,24 @@ export default function HeritageExplorer() {
                           animate={{ opacity: 1 }}
                           className="space-y-6"
                         >
-                          <div className="flex items-center justify-between gap-4 bg-gray-50 p-3 rounded-xl">
-                            <span className="text-xs text-gray-600 font-medium">🎧 Generate dynamic audio guide for history:</span>
-                            <div className="flex items-center gap-2">
-                              <select 
-                                value={selectedVoice} 
-                                onChange={(e) => setSelectedVoice(e.target.value)}
-                                className="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none"
-                              >
-                                {voicesList.map(v => (
-                                  <option key={v.name} value={v.name}>{v.desc}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={toggleAudio}
-                                disabled={audioLoading}
-                                className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1"
-                              >
-                                {audioLoading ? (
-                                  <RefreshCw className="h-3 w-3 animate-spin" />
-                                ) : isPlaying ? (
-                                  <><Pause className="h-3 w-3" /> Pause</>
-                                ) : (
-                                  <><Play className="h-3 w-3" /> Play Audio</>
-                                )}
-                              </button>
-                            </div>
+                          <div className="flex items-center justify-between gap-4 bg-amber-50/40 p-3 rounded-xl border border-amber-100/40">
+                            <span className="text-xs text-amber-900 font-semibold flex items-center gap-1">
+                              <Volume2 className="h-4 w-4 text-amber-700" />
+                              Listen to Historical Audio Narrator:
+                            </span>
+                            <button
+                              onClick={() => togglePlayback("history")}
+                              disabled={audioLoading}
+                              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              {audioLoading && playingTab === "history" ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : playingTab === "history" && isPlaying ? (
+                                <><Pause className="h-3 w-3" /> Pause</>
+                              ) : (
+                                <><Play className="h-3 w-3" /> Play Timeline</>
+                              )}
+                            </button>
                           </div>
 
                           <div className="space-y-4">
@@ -677,19 +1019,22 @@ export default function HeritageExplorer() {
                           animate={{ opacity: 1 }}
                           className="space-y-4"
                         >
-                          <div className="flex items-center justify-between gap-4 bg-gray-50 p-3 rounded-xl">
-                            <span className="text-xs text-gray-600 font-medium">🎧 Generate audio guide for architecture:</span>
+                          <div className="flex items-center justify-between gap-4 bg-amber-50/40 p-3 rounded-xl border border-amber-100/40">
+                            <span className="text-xs text-amber-900 font-semibold flex items-center gap-1">
+                              <Volume2 className="h-4 w-4 text-amber-700" />
+                              Listen to Architectural Audio Tour:
+                            </span>
                             <button
-                              onClick={toggleAudio}
+                              onClick={() => togglePlayback("architecture")}
                               disabled={audioLoading}
-                              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1"
+                              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                             >
-                              {audioLoading ? (
+                              {audioLoading && playingTab === "architecture" ? (
                                 <RefreshCw className="h-3 w-3 animate-spin" />
-                              ) : isPlaying ? (
+                              ) : playingTab === "architecture" && isPlaying ? (
                                 <><Pause className="h-3 w-3" /> Pause</>
                               ) : (
-                                <><Play className="h-3 w-3" /> Play Audio</>
+                                <><Play className="h-3 w-3" /> Play Tour</>
                               )}
                             </button>
                           </div>
@@ -707,6 +1052,25 @@ export default function HeritageExplorer() {
                           animate={{ opacity: 1 }}
                           className="space-y-4"
                         >
+                          <div className="flex items-center justify-between gap-4 bg-amber-50/40 p-3 rounded-xl border border-amber-100/40">
+                            <span className="text-xs text-amber-900 font-semibold flex items-center gap-1">
+                              <Volume2 className="h-4 w-4 text-amber-700" />
+                              Listen to Mythological Folklore:
+                            </span>
+                            <button
+                              onClick={() => togglePlayback("legends")}
+                              disabled={audioLoading}
+                              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              {audioLoading && playingTab === "legends" ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : playingTab === "legends" && isPlaying ? (
+                                <><Pause className="h-3 w-3" /> Pause</>
+                              ) : (
+                                <><Play className="h-3 w-3" /> Play Folklore</>
+                              )}
+                            </button>
+                          </div>
                           <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100">
                             <h4 className="text-xs font-semibold text-amber-800 uppercase tracking-wider mb-2">Sacred Folklore & Mythology</h4>
                             <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
@@ -969,59 +1333,220 @@ export default function HeritageExplorer() {
                   </div>
                 </div>
 
-                {/* Chat Companion / RAG Guide */}
-                <div className="bg-gray-50 rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-gray-200 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="h-4.5 w-4.5 text-amber-600 animate-pulse" />
-                      <h4 className="font-semibold text-gray-900 text-xs uppercase tracking-wider">Conversational Heritage Guide</h4>
+                {/* 👑 TALK TO HISTORICAL PERSONALITIES SECTION */}
+                <div id="talk-to-personalities" className="bg-gradient-to-b from-amber-900/5 via-amber-50/50 to-stone-100/60 rounded-3xl border border-amber-200/80 p-5 md:p-7 shadow-md space-y-5">
+                  
+                  {/* Header Section */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-amber-200/60 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="p-1.5 bg-amber-100 text-amber-900 rounded-lg text-lg shadow-xs">👑</span>
+                        <h3 className="font-bold text-gray-900 text-base md:text-xl tracking-tight flex items-center gap-2">
+                          TALK TO HISTORICAL PERSONALITIES
+                        </h3>
+                      </div>
+                      <p className="text-amber-900/80 font-medium text-xs md:text-sm">
+                        Grounded conversations with historical figures based on verified historical sources.
+                      </p>
                     </div>
-                    <span className="text-[10px] text-gray-400">Ask questions like you are talking to a local professor</span>
+                    
+                    <div className="hidden sm:flex items-center gap-2 bg-amber-100/80 px-3 py-1.5 rounded-full border border-amber-200 text-amber-900 text-xs font-medium">
+                      <Sparkles className="h-3.5 w-3.5 text-amber-700 animate-pulse" />
+                      <span>"Converse with the legends who shaped history."</span>
+                    </div>
                   </div>
 
-                  {/* Chat logs */}
-                  <div className="h-44 overflow-y-auto space-y-3 bg-white p-4 rounded-xl border border-gray-100">
-                    {chatHistory.map((chat, idx) => {
-                      const isModel = chat.role === "model";
-                      return (
-                        <div key={idx} className={`flex ${isModel ? "justify-start" : "justify-end"}`}>
-                          <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
-                            isModel 
-                              ? "bg-amber-50 text-amber-950 border border-amber-100/60" 
-                              : "bg-amber-900 text-white"
-                          }`}>
-                            {chat.parts?.[0]?.text}
+                  {/* Description Box */}
+                  <div className="bg-white/80 backdrop-blur-xs p-3.5 md:p-4 rounded-2xl border border-amber-200/70 text-xs md:text-sm text-stone-700 leading-relaxed shadow-xs">
+                    Step into history by speaking directly with the people who shaped this monument. Select a historical personality and begin an immersive AI-powered conversation grounded in verified historical knowledge.
+                  </div>
+
+                  {/* Personality Selector Carousel / Horizontal Scroll */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between text-xs font-semibold text-amber-950 uppercase tracking-wider">
+                      <span className="flex items-center gap-1.5">
+                        <Crown className="h-4 w-4 text-amber-600" />
+                        Select a Historical Personality ({personalitiesList.length})
+                      </span>
+                      <span className="text-[11px] text-stone-500 font-normal">Scroll horizontal to view all</span>
+                    </div>
+
+                    <div className="flex gap-3 overflow-x-auto pb-3 pt-1 snap-x no-scrollbar">
+                      {personalitiesList.map((p) => {
+                        const isSelected = selectedPersonality?.id === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => handleSelectPersonality(p)}
+                            className={`flex-none w-56 md:w-64 p-3.5 rounded-2xl border text-left transition-all duration-200 cursor-pointer snap-start relative group shadow-sm ${
+                              isSelected
+                                ? "bg-gradient-to-br from-amber-900 to-yellow-950 text-white border-amber-500 ring-2 ring-amber-500/40 shadow-md scale-[1.02]"
+                                : "bg-white hover:bg-amber-50/80 text-stone-800 border-amber-200/80 hover:border-amber-400"
+                            }`}
+                          >
+                            {/* Active speaking badge */}
+                            {isSelected && (
+                              <div className="absolute top-2.5 right-2.5 flex items-center gap-1 bg-amber-400/20 backdrop-blur-xs border border-amber-400/50 px-2 py-0.5 rounded-full text-[10px] font-bold text-amber-200 animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                                Speaking
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shadow-inner bg-gradient-to-br ${p.colorGradient} border border-amber-200/30 text-white`}>
+                                {p.avatarIcon}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <h4 className={`font-bold text-xs md:text-sm truncate ${isSelected ? "text-amber-100" : "text-stone-900"}`}>
+                                  {p.name}
+                                </h4>
+                                <p className={`text-[11px] font-medium truncate ${isSelected ? "text-amber-200/90" : "text-amber-800"}`}>
+                                  {p.role}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between text-[10px] mt-2 pt-2 border-t border-current/10">
+                              <span className={`font-semibold ${isSelected ? "text-amber-200" : "text-stone-600"}`}>
+                                {p.period}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md font-medium text-[9px] ${isSelected ? "bg-amber-800/60 text-amber-100" : p.badgeBg}`}>
+                                {p.dynastyOrBackground}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Chat Box Container */}
+                  {selectedPersonality && (
+                    <div className="bg-white rounded-2xl border border-amber-200/90 shadow-md overflow-hidden">
+                      
+                      {/* Personality Banner Header */}
+                      <div className="bg-gradient-to-r from-amber-900 via-amber-950 to-stone-900 text-white p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-amber-800">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-yellow-600 flex items-center justify-center text-2xl shadow-md border border-amber-300/40">
+                            {selectedPersonality.avatarIcon}
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-amber-300 font-semibold flex items-center gap-1.5">
+                              <Crown className="h-3 w-3 text-amber-400" /> Currently Speaking With
+                            </div>
+                            <h4 className="font-bold text-base md:text-lg text-white flex items-center gap-2">
+                              {selectedPersonality.name}
+                            </h4>
+                            <div className="text-xs text-amber-200/80 font-medium flex items-center gap-2 flex-wrap mt-0.5">
+                              <span>{selectedPersonality.role}</span>
+                              <span>•</span>
+                              <span>{selectedPersonality.dynastyOrBackground}</span>
+                              <span>•</span>
+                              <span className="text-amber-300 font-semibold">{selectedPersonality.period}</span>
+                            </div>
                           </div>
                         </div>
-                      );
-                    })}
-                    {chatLoading && (
-                      <div className="flex justify-start">
-                        <div className="bg-gray-100 text-gray-400 rounded-xl px-3 py-2 text-xs flex items-center gap-1.5">
-                          <RefreshCw className="h-3 w-3 animate-spin" /> Thinking...
+
+                        <div className="bg-amber-950/80 border border-amber-700/60 px-3 py-1.5 rounded-xl text-center self-start md:self-auto">
+                          <span className="text-[10px] uppercase tracking-wider text-amber-400 block font-semibold">Monument Context</span>
+                          <span className="text-xs font-bold text-amber-100">{monument.name}</span>
                         </div>
                       </div>
-                    )}
-                    <div ref={chatEndRef} />
+
+                      {/* Suggested Questions Chips */}
+                      {selectedPersonality.suggestedQuestions && selectedPersonality.suggestedQuestions.length > 0 && (
+                        <div className="bg-amber-50/70 border-b border-amber-200/60 p-3 px-4 md:px-5">
+                          <div className="text-[11px] font-bold text-amber-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <HelpCircle className="h-3.5 w-3.5 text-amber-700" />
+                            Suggested Questions for {selectedPersonality.name}:
+                          </div>
+                          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                            {selectedPersonality.suggestedQuestions.map((q, qIdx) => (
+                              <button
+                                key={qIdx}
+                                onClick={() => sendChatMessage(undefined, q)}
+                                disabled={chatLoading}
+                                className="flex-none bg-white hover:bg-amber-100/80 text-amber-950 text-xs px-3 py-1.5 rounded-full border border-amber-200 hover:border-amber-400 transition-all font-medium shadow-2xs hover:shadow-xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                              >
+                                "{q}"
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Chat Messages Log */}
+                      <div className="h-72 md:h-80 overflow-y-auto p-4 md:p-5 space-y-4 bg-gradient-to-b from-stone-50/80 via-white to-amber-50/30">
+                        {chatHistory.map((chat, idx) => {
+                          const isModel = chat.role === "model";
+                          return (
+                            <div key={idx} className={`flex ${isModel ? "justify-start" : "justify-end"}`}>
+                              <div className={`max-w-[88%] md:max-w-[80%] rounded-2xl p-3.5 md:p-4 text-xs md:text-sm leading-relaxed shadow-xs ${
+                                isModel
+                                  ? "bg-amber-50/90 text-amber-950 border border-amber-200/80 rounded-tl-xs"
+                                  : "bg-amber-900 text-white rounded-tr-xs shadow-sm"
+                              }`}>
+                                {isModel && (
+                                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800 border-b border-amber-200/60 pb-1 mb-1.5 flex items-center justify-between gap-2">
+                                    <span className="flex items-center gap-1">
+                                      <span>{selectedPersonality.avatarIcon}</span>
+                                      <span>{selectedPersonality.name}</span>
+                                    </span>
+                                    <span className="text-[9px] text-amber-700/80 font-medium">Grounded AI</span>
+                                  </div>
+                                )}
+                                <div className="whitespace-pre-wrap">{chat.parts?.[0]?.text}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {chatLoading && (
+                          <div className="flex justify-start">
+                            <div className="bg-amber-100/80 border border-amber-200 text-amber-900 rounded-2xl rounded-tl-xs px-4 py-3 text-xs flex items-center gap-2">
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-700" />
+                              <span>{selectedPersonality.name} is consulting historical archives...</span>
+                            </div>
+                          </div>
+                        )}
+                        <div ref={chatEndRef} />
+                      </div>
+
+                      {/* Chat Form Input */}
+                      <form onSubmit={(e) => sendChatMessage(e)} className="p-3.5 md:p-4 bg-white border-t border-amber-200/80 flex gap-2">
+                        <input
+                          type="text"
+                          value={chatMessage}
+                          onChange={(e) => setChatMessage(e.target.value)}
+                          placeholder={selectedPersonality.placeholderText}
+                          className="flex-1 bg-amber-50/40 border border-amber-200/90 px-4 py-2.5 rounded-xl text-xs md:text-sm focus:outline-none focus:border-amber-600 focus:bg-white text-stone-900 placeholder:text-stone-400 font-medium transition-all"
+                        />
+                        <button
+                          type="submit"
+                          disabled={chatLoading || !chatMessage.trim()}
+                          className="bg-gradient-to-r from-amber-800 to-yellow-900 hover:from-amber-900 hover:to-stone-950 text-white px-5 py-2.5 rounded-xl text-xs md:text-sm font-semibold flex items-center gap-2 shadow-sm disabled:opacity-40 transition-all cursor-pointer"
+                        >
+                          <span>Send</span>
+                          <Send className="h-3.5 w-3.5" />
+                        </button>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Information Card */}
+                  <div className="bg-amber-100/60 border border-amber-200/80 rounded-2xl p-3.5 px-4 text-xs text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center gap-2 font-bold text-amber-900 text-xs">
+                      <Sparkles className="h-4 w-4 text-amber-600" />
+                      <span>⚡ Powered by Google Gemini</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-amber-800 font-medium">
+                      <span>• Grounded using verified historical archives</span>
+                      <span>• Multilingual AI Conversations</span>
+                      <span>• Retrieval-Augmented Generation (RAG)</span>
+                      <span>• Educational AI Experience</span>
+                    </div>
                   </div>
 
-                  {/* Chat input form */}
-                  <form onSubmit={sendChatMessage} className="flex gap-2">
-                    <input
-                      type="text"
-                      value={chatMessage}
-                      onChange={(e) => setChatMessage(e.target.value)}
-                      placeholder={`Ask me anything about ${monument.name}...`}
-                      className="flex-1 bg-white border border-gray-200 px-3.5 py-2 rounded-xl text-xs focus:outline-none focus:border-amber-500 text-gray-800"
-                    />
-                    <button
-                      type="submit"
-                      disabled={chatLoading || !chatMessage.trim()}
-                      className="bg-amber-900 hover:bg-black text-white px-3 py-2 rounded-xl text-xs font-semibold disabled:opacity-40"
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
-                  </form>
                 </div>
               </motion.div>
             )}
