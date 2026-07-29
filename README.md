@@ -77,7 +77,7 @@ Data Storage & External APIs
   - Photos & gallery
   - Talk to Historical Personalities
   - AI-powered quizzes
-- **Heritage Quest & Puzzle**
+- **Heritage Quiz & Puzzle**
   - Monument-based puzzles
   - Learn historical facts
   - Interactive quizzes
@@ -113,32 +113,7 @@ Data Storage & External APIs
   - Revenue insights
   - Crowd prediction
   - AI recommendations
-  - Downloadable reports
-- **Complaint Management**
-  - GPS verification
-  - Image verification
-  - Complaint tracking
-  - Issue management
-- **Visitor Analytics**
-  - Daily visitor trends
-  - Crowd density
-  - Peak hours
-  - Tourist demographics
-  - Heatmaps
-- **Conservation Management**
-  - Structural risk assessment
-  - Maintenance planning
-  - Budget allocation
-  - AI-assisted conservation
-- **Archaeology Management**
-  - Public discovery reports
-  - Excavation management
-  - Heritage documentation
-- **Administration**
-  - User management
-  - Role management
-  - AI configuration
-  - System settings
+  - AI Tourist Sentiment Distribution & Consolidated Feedback
 
 ---
 
