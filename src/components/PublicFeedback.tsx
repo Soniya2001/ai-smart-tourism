@@ -159,7 +159,7 @@ export default function PublicFeedbackForm() {
         },
         visitDate,
         reviewText: reviewText.trim() || "Wonderful experience exploring this cultural monument.",
-        imageUrl: imageUrl || samplePhotos[0].url,
+        imageUrl: imageUrl ? imageUrl.trim() : "",
         wouldRecommend,
         timestamp: new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),
         aiSentimentTag: sentiment,

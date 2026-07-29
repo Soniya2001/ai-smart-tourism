@@ -33,7 +33,12 @@ Our platform features a highly tactile, dark cosmic-slate UI theme designed to s
 ### 4. Local Business & Community Support
 * **Eco-tourism and Local Sourcing**: Recommends surrounding handcrafted workshops, local artisan boutiques, traditional restaurants (with must-try local dishes), and live cultural events to support community well-being and local livelihoods.
 
-### 5. AR Scavenger Hunt & Time Travel Puzzle
+### 5. Archaeology Corner (Public Portal)
+* **New Civilization & Artifact Cards**: A dedicated public section featuring verified facts on recent archaeological findings (e.g., Keezhadi Sangam literacy, Sinauli Bronze Age chariots, Submerged Poompuhar harbor, Porunai River 2172 BCE iron technology, Rakhigarhi DNA).
+* **Interactive Fact Exploration**: Filter by category (*Civilizations*, *Marine & Submerged*, *Excavations & Artifacts*, *Scripts & Inscriptions*) with built-in text-to-speech audio narration, social likes, and "Fact of the Day" spotlights.
+* **Public Discovery Reporting**: Allows local citizens and tourists to submit reports of local artifact discoveries or observations directly to the portal.
+
+### 6. AR Scavenger Hunt & Time Travel Puzzle
 * **Simulated Physical QR Scans**: Earn experience points (XP) and collect mythical badges (e.g., *Gopuram Master*, *Vimana Seeker*) by simulating physical QR plaque scans.
 * **Interactive Time-Travel Puzzle**: Solve spatial jigsaw puzzles reconstructed from authentic monument photographs across historical eras.
 * **Seamless Full-Image Completion**: Upon arranging all puzzle tiles correctly, tile partitions automatically dissolve to display a single, full-resolution, unsegmented photograph with completion badges and monument overlays.
@@ -41,7 +46,7 @@ Our platform features a highly tactile, dark cosmic-slate UI theme designed to s
 * **Multi-Model AI Resilience**: Implements intelligent model fallback switching (`gemini-2.5-flash` → `gemini-2.0-flash` → localized rich datasets) to guarantee uninterrupted learning and quiz generation even under API rate limits.
 * **Heritage Certificate**: Accumulate all four master badges to unlock a personalized digital *Certificate of Heritage Intelligence* approved by the simulated Global Heritage Foundation.
 
-### 6. Decision Intelligence Dashboard (Global Architecture)
+### 7. Decision Intelligence Dashboard (Global Architecture)
 * **Any Landmark Worldwide**: Dynamic search bar allows tourism departments and city officials to query visitor traffic, crowd density, and structural feedback for *any* architectural monument globally (e.g., *Colosseum*, *Machu Picchu*, *Ajanta Caves*).
 * **AI Conservation Advisories**: Auto-generates detailed structural health summaries, environmental wear analysis, and budget distribution recommendations for preservation.
 

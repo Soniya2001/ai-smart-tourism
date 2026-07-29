@@ -11,31 +11,67 @@ import HeritageExplorer from "./components/HeritageExplorer";
 import ARTreasureHunt from "./components/ARTreasureHunt";
 import PublicFeedbackForm from "./components/PublicFeedback";
 import TourismDonation from "./components/TourismDonation";
+import ArchaeologyCorner from "./components/ArchaeologyCorner";
 import AuthorityPortal from "./components/AuthorityPortal";
 import LoginPage from "./components/LoginPage";
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("sharedTrip") === "true" || params.get("dest") || params.get("module") === "planner") {
+        return true; // Auto-login as Guest Explorer to instantly view shared trip!
+      }
+    }
+    return false;
+  });
+
   const [portalMode, setPortalMode] = useState<"public" | "authority">("public");
   const [currentUser, setCurrentUser] = useState<{
     name: string;
     email: string;
     role: string;
     language?: string;
-  }>({
-    name: "Guest Explorer",
-    email: "guest@oorpayana.org",
-    role: "Public Tourist"
+    isGuest?: boolean;
+  }>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("sharedTrip") === "true" || params.get("dest")) {
+        return {
+          name: "Guest Explorer",
+          email: "guest@oorpayana.org",
+          role: "Guest Tourist (Shared Link)",
+          isGuest: true
+        };
+      }
+    }
+    return {
+      name: "Guest Explorer",
+      email: "guest@oorpayana.org",
+      role: "Public Tourist",
+      isGuest: true
+    };
   });
 
-  const [activeModule, setActiveModule] = useState<string>("planner");
+  const [activeModule, setActiveModule] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("sharedTrip") === "true" || params.get("module") === "planner" || window.location.hash.includes("planner")) {
+        return "planner";
+      }
+    }
+    return "planner";
+  });
 
   const handleLogin = (
     portal: "public" | "authority",
     userInfo: { name: string; email: string; role: string; language?: string }
   ) => {
     setPortalMode(portal);
-    setCurrentUser(userInfo);
+    setCurrentUser({
+      ...userInfo,
+      isGuest: userInfo.name === "Guest Explorer"
+    });
     setIsLoggedIn(true);
   };
 
@@ -48,6 +84,7 @@ export default function App() {
     { id: "planner", label: "Smart Travel Planner", icon: <Compass className="h-4 w-4 text-teal-600 fill-teal-500" />, desc: "Personalized, crowd-aware plans" },
     { id: "explorer", label: "Multimodal Heritage Explorer", icon: <Landmark className="h-4 w-4 text-amber-700" />, desc: "Gemini Vision & Audio Guide" },
     { id: "timetravel", label: "Heritage Puzzle & Quiz", icon: <Puzzle className="h-4 w-4 text-indigo-600" />, desc: "Rebuild history & test your knowledge" },
+    { id: "archaeology", label: "Archaeology Corner", icon: <Landmark className="h-4 w-4 text-amber-600" />, desc: "Latest facts & civilization discoveries" },
     { id: "feedback", label: "Public Feedback", icon: <Star className="h-4 w-4 text-amber-500 fill-amber-500" />, desc: "Rate monument ratings, photos & reviews" },
     { id: "donation", label: "Donate for Tourism", icon: <Heart className="h-4 w-4 text-emerald-600 fill-emerald-500" />, desc: "Select location, adopt & click to pay" }
   ];
@@ -84,26 +121,51 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden lg:flex items-center gap-2 text-xs bg-slate-100 text-slate-700 font-medium px-3 py-1 rounded-xl border border-slate-200">
-              <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
-              <span>{currentUser.name}</span>
-              <span className="text-slate-400">|</span>
-              <span className="text-[10px] font-mono text-slate-500">{currentUser.role}</span>
-            </div>
+            {currentUser.isGuest || currentUser.name === "Guest Explorer" ? (
+              <>
+                <div className="hidden lg:flex items-center gap-2 text-xs bg-amber-50 text-amber-900 font-semibold px-3 py-1 rounded-xl border border-amber-200">
+                  <UserCheck className="h-3.5 w-3.5 text-amber-600" />
+                  <span>Guest Explorer Mode</span>
+                </div>
 
-            <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100/50">
-              <Sparkles className="h-3 w-3 text-emerald-600 animate-pulse" />
-              <span>Gemini 2.5 Core</span>
-            </span>
+                <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100/50">
+                  <Sparkles className="h-3 w-3 text-emerald-600 animate-pulse" />
+                  <span>Gemini 2.5 Core</span>
+                </span>
 
-            <button
-              onClick={handleLogout}
-              className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1.5 border border-slate-300"
-              title="Sign Out to Login Page"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Sign Out</span>
-            </button>
+                <button
+                  onClick={() => setIsLoggedIn(false)}
+                  className="text-xs font-extrabold px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-1.5 shadow-sm border border-emerald-600"
+                  title="Log in to personalized account"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Log In / Sign In</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="hidden lg:flex items-center gap-2 text-xs bg-slate-100 text-slate-700 font-medium px-3 py-1 rounded-xl border border-slate-200">
+                  <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>{currentUser.name}</span>
+                  <span className="text-slate-400">|</span>
+                  <span className="text-[10px] font-mono text-slate-500">{currentUser.role}</span>
+                </div>
+
+                <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100/50">
+                  <Sparkles className="h-3 w-3 text-emerald-600 animate-pulse" />
+                  <span>Gemini 2.5 Core</span>
+                </span>
+
+                <button
+                  onClick={handleLogout}
+                  className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1.5 border border-slate-300"
+                  title="Sign Out to Login Page"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -209,6 +271,17 @@ export default function App() {
                       exit={{ opacity: 0, y: -10 }}
                     >
                       <ARTreasureHunt />
+                    </motion.div>
+                  )}
+
+                  {activeModule === "archaeology" && (
+                    <motion.div
+                      key="archaeology"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                    >
+                      <ArchaeologyCorner />
                     </motion.div>
                   )}
 

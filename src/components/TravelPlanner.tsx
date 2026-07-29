@@ -25,6 +25,92 @@ export default function TravelPlanner() {
   const [activeDay, setActiveDay] = useState<number>(1);
   const [packedState, setPackedState] = useState<Record<string, boolean>>({});
   const [showQrModal, setShowQrModal] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const [isSharedView, setIsSharedView] = useState(false);
+
+  // Check if page was loaded via a shared trip link
+  React.useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const isShared = searchParams.get("sharedTrip") === "true";
+    const sharedDest = searchParams.get("dest");
+
+    if (isShared && sharedDest) {
+      setIsSharedView(true);
+      const sharedDur = parseInt(searchParams.get("duration") || "3", 10);
+      const sharedStart = searchParams.get("startDate") || "2026-08-01";
+      const sharedEnd = searchParams.get("endDate") || "2026-08-03";
+      const sharedBudget = searchParams.get("budget") || "Moderate";
+      const sharedInterests = searchParams.get("interests") ? searchParams.get("interests")!.split(",") : ["History", "Architecture"];
+      const sharedTransport = searchParams.get("transport") || "Auto-Rickshaw & Cabs";
+      const sharedWeather = searchParams.get("weather") || "Sunny & Warm";
+      const sharedCrowd = searchParams.get("crowd") || "Avoid peak hours (Smart Flow)";
+
+      setDestination(sharedDest);
+      setDuration(sharedDur);
+      setStartDate(sharedStart);
+      setEndDate(sharedEnd);
+      setBudget(sharedBudget);
+      setInterests(sharedInterests);
+      setTransport(sharedTransport);
+      setWeather(sharedWeather);
+      setCrowdPreference(sharedCrowd);
+
+      // Try loading cached plan from localStorage
+      const saved = localStorage.getItem(`shared_trip_${encodeURIComponent(sharedDest)}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.plan) {
+            setPlan(parsed.plan);
+            return;
+          }
+        } catch (e) {
+          console.error("Failed to parse cached shared plan", e);
+        }
+      }
+
+      // Auto-generate itinerary for shared parameters
+      fetchSharedItinerary({
+        destination: sharedDest,
+        duration: sharedDur,
+        startDate: sharedStart,
+        endDate: sharedEnd,
+        budget: sharedBudget,
+        interests: sharedInterests,
+        transport: sharedTransport,
+        weather: sharedWeather,
+        crowdPreference: sharedCrowd
+      });
+    }
+  }, []);
+
+  const fetchSharedItinerary = async (paramsObj: any) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/planner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(paramsObj)
+      });
+      if (!response.ok) throw new Error("Failed to load shared trip itinerary.");
+      const data = await response.json();
+      setPlan(data);
+      setActiveDay(1);
+      if (data.packingChecklist) {
+        const initPacked: Record<string, boolean> = {};
+        data.packingChecklist.forEach((item: any) => {
+          initPacked[item.id] = item.packed || false;
+        });
+        setPackedState(initPacked);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to load shared trip.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const interestOptions = ["History", "Architecture", "Spiritual", "Culinary/Food", "Shopping", "Arts & Crafts", "Nature & Parks"];
 
@@ -127,27 +213,23 @@ export default function TravelPlanner() {
     URL.revokeObjectURL(url);
   };
 
-  const exportIcsCalendar = () => {
-    if (!plan) return;
-    const icsContent = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Smart Travel Planner Gemini//EN
-BEGIN:VEVENT
-SUMMARY:Trip to ${destination} - ${plan.title}
-DESCRIPTION:${plan.summary.replace(/\n/g, ' ')}
-LOCATION:${destination}
-DTSTART:${startDate.replace(/-/g, '')}T090000Z
-DTEND:${endDate.replace(/-/g, '')}T180000Z
-END:VEVENT
-END:VCALENDAR`;
-
-    const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Trip_${destination.split(",")[0]}.ics`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const getShareableTripUrl = () => {
+    if (typeof window === "undefined") return "#";
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+    const params = new URLSearchParams({
+      sharedTrip: "true",
+      dest: destination,
+      duration: String(duration),
+      startDate: startDate,
+      endDate: endDate,
+      budget: budget,
+      interests: interests.join(","),
+      transport: transport,
+      weather: weather,
+      crowd: crowdPreference
+    });
+    return `${origin}${pathname}?${params.toString()}#planner`;
   };
 
   const getGoogleCalendarUrl = () => {
@@ -161,10 +243,21 @@ END:VCALENDAR`;
   };
 
   const copyShareLink = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
-      alert("Trip itinerary link copied to clipboard!");
+    const url = getShareableTripUrl();
+    if (plan) {
+      try {
+        localStorage.setItem(`shared_trip_${encodeURIComponent(destination)}`, JSON.stringify({
+          destination, duration, startDate, endDate, budget, interests, transport, weather, crowdPreference, plan
+        }));
+      } catch (e) {
+        console.error("Failed to save plan to localStorage", e);
+      }
     }
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+    }
+    setCopyToast(true);
+    setTimeout(() => setCopyToast(false), 3500);
   };
 
   // Quick setup helper for Indian Heritage cities
@@ -514,19 +607,13 @@ END:VCALENDAR`;
                     </a>
 
                     <button
-                      onClick={exportIcsCalendar}
-                      className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium rounded-xl flex items-center gap-1.5 transition-colors"
-                    >
-                      <Calendar className="h-3.5 w-3.5 text-purple-600" />
-                      <span>Apple (.ics)</span>
-                    </button>
-
-                    <button
                       onClick={() => setShowQrModal(!showQrModal)}
-                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-medium rounded-xl flex items-center gap-1.5 transition-colors"
+                      className={`px-3 py-1.5 text-xs font-medium rounded-xl flex items-center gap-1.5 transition-colors ${
+                        showQrModal ? "bg-emerald-600 text-white shadow-xs" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800"
+                      }`}
                     >
                       <QrCode className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>QR Code</span>
+                      <span>{showQrModal ? "Hide QR" : "QR Code"}</span>
                     </button>
 
                     <button
@@ -539,32 +626,99 @@ END:VCALENDAR`;
                   </div>
                 </div>
 
+                {/* Shared View Banner notice if loaded from URL */}
+                {isSharedView && (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs font-medium">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-emerald-600 animate-pulse" />
+                      <span>Viewing Shared Trip Blueprint for <strong>{destination}</strong> as <strong>Guest Explorer</strong> (No Login Required)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] bg-emerald-200 text-emerald-900 px-2.5 py-0.5 rounded-full font-bold">Live Shared Plan</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Toast Notification when link copied */}
+                {copyToast && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="bg-emerald-950 text-white px-4 py-2.5 rounded-xl shadow-lg border border-emerald-700 flex items-center justify-between gap-3 text-xs font-semibold"
+                  >
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      <span>Shareable trip URL copied to clipboard! Anyone opening or scanning this link will view this exact plan.</span>
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* QR Code Modal / Card preview */}
-                {showQrModal && plan.exportData && (
+                {showQrModal && plan && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="bg-emerald-900 text-white p-5 rounded-2xl border border-emerald-800 flex flex-col md:flex-row items-center gap-4"
+                    className="bg-emerald-950 text-white p-5 rounded-2xl border border-emerald-800 flex flex-col md:flex-row items-center gap-5 shadow-xl"
                   >
-                    <img
-                      src={plan.exportData.qrCodeUrl}
-                      alt="Trip QR Code"
-                      className="w-28 h-28 bg-white p-1 rounded-xl shadow-md shrink-0"
-                    />
-                    <div className="space-y-1.5 text-center md:text-left">
-                      <h5 className="font-semibold text-sm text-emerald-100 flex items-center justify-center md:justify-start gap-1.5">
-                        <QrCode className="h-4 w-4 text-emerald-400" />
-                        Scan to Open Trip on Mobile
-                      </h5>
+                    <div className="bg-white p-2.5 rounded-2xl shadow-md shrink-0 text-center space-y-1">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(getShareableTripUrl())}`}
+                        alt="Trip QR Code"
+                        className="w-32 h-32 object-contain"
+                      />
+                      <span className="text-[10px] text-gray-500 font-mono block">Scannable 2D QR</span>
+                    </div>
+                    <div className="space-y-3 text-center md:text-left flex-1 w-full">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-bold text-sm text-emerald-100 flex items-center justify-center md:justify-start gap-1.5">
+                          <QrCode className="h-4 w-4 text-emerald-400" />
+                          Scan to View Trip Plan on Mobile
+                        </h5>
+                        <button
+                          onClick={() => setShowQrModal(false)}
+                          className="text-xs text-emerald-300 hover:text-white font-bold px-2 py-0.5 rounded-lg bg-emerald-900/60"
+                        >
+                          ✕ Close
+                        </button>
+                      </div>
                       <p className="text-xs text-emerald-200/90 leading-relaxed">
-                        Scan this QR code with your mobile camera to view your live itinerary and offline emergency numbers.
+                        Scan this QR code with any smartphone camera to open and view the complete itinerary, weather forecast, and budget guide for <strong>{destination}</strong>.
                       </p>
+                      
+                      <div className="bg-emerald-900/80 p-2.5 rounded-xl border border-emerald-800/80 flex flex-col sm:flex-row items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={getShareableTripUrl()}
+                          className="bg-emerald-950 text-[11px] text-emerald-200 font-mono px-3 py-1.5 rounded-lg w-full outline-none truncate border border-emerald-800"
+                        />
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={copyShareLink}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-colors"
+                          >
+                            Copy Link
+                          </button>
+                          <a
+                            href={getShareableTripUrl()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors"
+                          >
+                            <span>Test Link</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      </div>
+
                       <div className="pt-1 flex flex-wrap gap-2 text-[10px] text-emerald-300 font-mono">
-                        {plan.exportData.emergencyContacts.map((c, i) => (
-                          <span key={i} className="bg-emerald-950/60 px-2 py-1 rounded border border-emerald-700/50">
-                            {c.name}: {c.number}
-                          </span>
-                        ))}
+                        <span className="bg-emerald-900 px-2 py-1 rounded border border-emerald-800">
+                          🚨 Emergency Support: 112 / 1363 (Tourist Helpline)
+                        </span>
+                        <span className="bg-emerald-900 px-2 py-1 rounded border border-emerald-800">
+                          🏛️ Heritage Care Desk: 1800-425-5111
+                        </span>
                       </div>
                     </div>
                   </motion.div>

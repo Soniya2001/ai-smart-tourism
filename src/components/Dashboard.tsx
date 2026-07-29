@@ -6,9 +6,9 @@ import {
 } from "recharts";
 import { 
   Building, TrendingUp, Shield, Activity, Users, DollarSign, 
-  RefreshCw, AlertCircle, Sparkles, CheckCircle, Award, Heart, Search, MapPin, Clock, Calendar
+  RefreshCw, AlertCircle, Sparkles, CheckCircle, Award, Heart, Search, MapPin, Clock, Calendar, MessageSquare, Star
 } from "lucide-react";
-import { AnalyticsDashboardData, SentimentCategorySummary } from "../types";
+import { AnalyticsDashboardData, SentimentCategorySummary, PublicFeedback } from "../types";
 
 export default function Dashboard() {
   const [selectedRegion, setSelectedRegion] = useState<string>("South India Heritage Arc");
@@ -22,6 +22,32 @@ export default function Dashboard() {
   const [activeSentiment, setActiveSentiment] = useState<"positive" | "neutral" | "negative">("positive");
   const [isGeneratingSentimentAi, setIsGeneratingSentimentAi] = useState<boolean>(false);
   const [aiSentimentSummaries, setAiSentimentSummaries] = useState<Record<string, SentimentCategorySummary>>({});
+
+  // Sync Public Portal Feedback entries
+  const [publicReviews, setPublicReviews] = useState<PublicFeedback[]>(() => {
+    const saved = localStorage.getItem("public_monument_feedback");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    const syncPublicReviews = () => {
+      const saved = localStorage.getItem("public_monument_feedback");
+      if (saved) {
+        try {
+          setPublicReviews(JSON.parse(saved));
+        } catch (e) {
+          console.error("Failed to parse public monument feedback", e);
+        }
+      }
+    };
+    syncPublicReviews();
+    window.addEventListener("storage", syncPublicReviews);
+    window.addEventListener("focus", syncPublicReviews);
+    return () => {
+      window.removeEventListener("storage", syncPublicReviews);
+      window.removeEventListener("focus", syncPublicReviews);
+    };
+  }, []);
 
   // Compute exact start & end dates for the selected time window
   const getTimeframeDateRange = (timeframe: string) => {
@@ -830,6 +856,70 @@ export default function Dashboard() {
                       </motion.div>
                     </AnimatePresence>
                   </div>
+                </div>
+
+                {/* Live Public Tourist Feedback Stream */}
+                <div className="pt-4 border-t border-gray-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-emerald-600" />
+                      <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+                        Live Public Portal Ratings & Consolidated Tourist Reviews ({publicReviews.length})
+                      </h4>
+                    </div>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full font-bold border border-emerald-200 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Live Synced from Public Portal
+                    </span>
+                  </div>
+
+                  {publicReviews.length === 0 ? (
+                    <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-gray-500">
+                      No public reviews submitted yet. Submit feedback in the Public Feedback tab to see it reflect live here!
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {publicReviews.map((rev) => (
+                        <div key={rev.id} className="bg-slate-50/80 hover:bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 shadow-xs space-y-2 flex flex-col justify-between">
+                          <div className="space-y-1.5">
+                            <div className="flex items-start justify-between gap-1">
+                              <div>
+                                <h5 className="font-bold text-xs text-slate-900 leading-tight">{rev.monumentName}</h5>
+                                <span className="text-[10px] text-slate-500 font-medium">{rev.monumentType}</span>
+                              </div>
+                              <div className="flex items-center gap-1 bg-amber-100/80 text-amber-900 px-2 py-0.5 rounded-lg text-xs font-bold border border-amber-200 shrink-0">
+                                <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                                <span>{rev.overallRating}.0</span>
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-slate-700 font-medium italic leading-snug">
+                              "{rev.reviewText}"
+                            </p>
+
+                            {rev.imageUrl && (
+                              <div className="h-28 w-full rounded-xl overflow-hidden bg-slate-200 mt-1">
+                                <img src={rev.imageUrl} alt={rev.monumentName} className="w-full h-full object-cover" />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                            <span>By <strong>{rev.visitorName}</strong> ({rev.visitDate})</span>
+                            <span className={`px-2 py-0.5 rounded-md font-bold uppercase tracking-wider ${
+                              rev.aiSentimentTag === "Very Positive" || rev.aiSentimentTag === "Positive"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : rev.aiSentimentTag === "Neutral"
+                                ? "bg-slate-200 text-slate-800"
+                                : "bg-amber-100 text-amber-800"
+                            }`}>
+                              {rev.aiSentimentTag || "Positive"}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] text-slate-600 font-medium">
